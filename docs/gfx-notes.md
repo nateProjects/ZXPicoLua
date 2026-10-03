@@ -64,18 +64,26 @@ of hex data. Verified rendering correctly in the demo (`print()` and
 `cursor()`/`print_at_cursor()`, including an embedded `\n` splitting into
 two correctly-positioned lines).
 
-## Still-unexplained: the stray single-pixel artifacts from M0 persist, now with a third data point
+## RESOLVED: the stray single-pixel artifacts were real corruption, not a display quirk
 
 The same handful of isolated, off-content single-pixel colour anomalies
-from the M0 Layer 2 spike (`docs/layer2-notes.md`) reappear in this
+from the M0 Layer 2 spike (`docs/layer2-notes.md`) reappeared in this
 completely different scene (text/shapes instead of colour bars) -- e.g. a
 single stray dark-blue pixel sitting in empty black space near the line-X
-test, on neither line's path. Same signature as before: isolated, doesn't
-match anything actually drawn, doesn't block any of M1's actual
-correctness checks. Third independent occurrence across two different
-spikes now; still reads as a ZEsarUX-side rendering artifact rather than a
-library bug, per M0's reasoning, but worth keeping in mind if real
-hardware testing ever surfaces something that looks similar.
+test, on neither line's path. At the time this was logged as "still reads
+as a ZEsarUX-side rendering artifact... worth keeping in mind", following
+M0's own (as it turned out, premature) conclusion. **That conclusion was
+wrong.** Chased down properly afterward: the framebuffer bytes at these
+exact coordinates genuinely held stray data our code never wrote. Root
+cause was the classic ROM's 50Hz interrupt handler writing into a fixed
+system-variable address range that happened to overlap the MMU window
+`pico_pset()`/`pico_cls()` use to reach Layer 2 RAM -- full writeup and
+the fix (move the window, and critically, disable interrupts around each
+access) in `docs/layer2-notes.md`'s "RESOLVED" section. Three independent
+sightings across two different scenes turned out to be the same real bug,
+not three coincidental emulator quirks -- a reminder that an anomaly
+matching an earlier "probably harmless" explanation is a reason to
+double-check that explanation, not a reason to stop looking.
 
 ## Deliberate API deviations from PicoJS/Pico-8 (see pico_gfx.h for the full rationale)
 

@@ -1,4 +1,4 @@
-/* Layer 2 access: MMU slot 2 ($4000-$5FFF) is used as a temporary 8K
+/* Layer 2 access: MMU slot 3 ($6000-$7FFF) is used as a temporary 8K
  * window onto Layer 2 RAM, paged in 8K steps -- the same mechanism proven
  * in two real shipped z88dk Next games (next-resources/code/
  * zxnext_level9-master/src/layer2.c and brahman-master-zxnext_magnetic's
@@ -15,15 +15,43 @@
  * worked around it by writing the MMU slot's NextReg directly via
  * ZXN_WRITE_REG/ZXN_READ_REG (proven working there) rather than a
  * slot-specific helper -- MMU slot N's NextReg is $50+N (bank.h confirms
- * slot 1 = $51), so slot 2 is $52. Same approach used here. */
+ * slot 1 = $51). Same approach used here, for slot 3 ($53).
+ *
+ * Moved from slot 2 ($4000-$5FFF) to slot 3 ($6000-$7FFF) -- slot 2
+ * overlaps the classic ZX ROM's system variables area ($5B00-$5CFF, the
+ * same range dark-room-next's docs/tilemap-notes.md already flagged as
+ * hazardous), clear of this project's own resident code too (which starts
+ * at $8000 per z88dk classic clib convention, per bank.h's own comment).
+ * This alone turned out NOT to be sufficient, though -- see the DI/EI
+ * note below, and docs/layer2-notes.md's "stray pixels" postmortem for
+ * the full investigation (confirmed, by reading the actual framebuffer
+ * bytes at the affected coordinates, that a handful of stray, intermittent
+ * single-pixel anomalies in M0/M1 screenshots were genuine data
+ * corruption, not a ZEsarUX rendering artifact as first guessed).
+ *
+ * CRITICAL: every access through this window disables interrupts for its
+ * duration (intrinsic_di()/intrinsic_ei() around mmu_window_page_in() ..
+ * mmu_window_page_out()). Moving to slot 3 alone did not stop the
+ * corruption in testing -- something (the ROM's 50Hz interrupt handler,
+ * almost certainly, though its exact reach beyond $5B00-$5CFF wasn't
+ * pinned down further) can still write into this window's address range
+ * while a Layer 2 physical page is mapped there, regardless of which
+ * slot/address range is used. Disabling interrupts for the critical
+ * section is the actual, slot-independent fix -- confirmed via a full
+ * 48KB memory dump of every physical page after a long stress run (see
+ * docs/layer2-notes.md), not just a screenshot spot-check. Safe here
+ * because this project runs with interrupts enabled throughout its whole
+ * lifetime from one intrinsic_ei() at startup (main.c) -- these are brief,
+ * non-nested critical sections, not a general-purpose DI/EI stack. */
 
 #include <arch/zxn.h>
+#include <intrinsic.h>
 #include <string.h>
 #include "pico_video.h"
 
-#define MMU_SLOT_2_REG 0x52
+#define MMU_SLOT_3_REG 0x53
 
-#define LAYER2_WINDOW_ADDR ((uint8_t *)0x4000)
+#define LAYER2_WINDOW_ADDR ((uint8_t *)0x6000)
 #define LAYER2_WINDOW_SIZE 0x2000
 #define LAYER2_PAGES 6 /* 256*192 = 49152 bytes = 6 * 8192 */
 
@@ -43,14 +71,14 @@ static uint8_t layer2_base_page(void) {
     return ZXN_READ_REG(REG_LAYER_2_RAM_BANK) << 1;
 }
 
-static uint8_t mmu2_page_in(uint8_t physical_page) {
-    uint8_t prev = ZXN_READ_REG(MMU_SLOT_2_REG);
-    ZXN_WRITE_REG(MMU_SLOT_2_REG, physical_page);
+static uint8_t mmu_window_page_in(uint8_t physical_page) {
+    uint8_t prev = ZXN_READ_REG(MMU_SLOT_3_REG);
+    ZXN_WRITE_REG(MMU_SLOT_3_REG, physical_page);
     return prev;
 }
 
-static void mmu2_page_out(uint8_t previous_page) {
-    ZXN_WRITE_REG(MMU_SLOT_2_REG, previous_page);
+static void mmu_window_page_out(uint8_t previous_page) {
+    ZXN_WRITE_REG(MMU_SLOT_3_REG, previous_page);
 }
 
 void pico_video_init(uint16_t logical_w, uint16_t logical_h) {
@@ -75,35 +103,42 @@ void pico_video_init(uint16_t logical_w, uint16_t logical_h) {
 
 void pico_cls(uint8_t color) {
     uint8_t base = layer2_base_page();
-    uint8_t prev = mmu2_page_in(base);
+    uint8_t prev;
 
+    intrinsic_di();
+    prev = mmu_window_page_in(base);
     memset(LAYER2_WINDOW_ADDR, color, LAYER2_WINDOW_SIZE);
     for (uint8_t i = 1; i < LAYER2_PAGES; i++) {
-        ZXN_WRITE_REG(MMU_SLOT_2_REG, base + i);
+        ZXN_WRITE_REG(MMU_SLOT_3_REG, base + i);
         memset(LAYER2_WINDOW_ADDR, color, LAYER2_WINDOW_SIZE);
     }
-
-    mmu2_page_out(prev);
+    mmu_window_page_out(prev);
+    intrinsic_ei();
 }
 
 void pico_pset(uint8_t x, uint8_t y, uint8_t color) {
     uint16_t offset = (uint16_t)(origin_y + y) * PICO_PHYS_W + (origin_x + x);
     uint8_t base = layer2_base_page();
-    uint8_t prev = mmu2_page_in(base + (offset >> 13));
+    uint8_t prev;
 
-    *((uint8_t *)(0x4000 + (offset & 0x1FFF))) = color;
-
-    mmu2_page_out(prev);
+    intrinsic_di();
+    prev = mmu_window_page_in(base + (offset >> 13));
+    *((uint8_t *)(0x6000 + (offset & 0x1FFF))) = color;
+    mmu_window_page_out(prev);
+    intrinsic_ei();
 }
 
 uint8_t pico_pget(uint8_t x, uint8_t y) {
     uint16_t offset = (uint16_t)(origin_y + y) * PICO_PHYS_W + (origin_x + x);
     uint8_t base = layer2_base_page();
-    uint8_t prev = mmu2_page_in(base + (offset >> 13));
+    uint8_t prev;
     uint8_t value;
 
-    value = *((uint8_t *)(0x4000 + (offset & 0x1FFF)));
+    intrinsic_di();
+    prev = mmu_window_page_in(base + (offset >> 13));
+    value = *((uint8_t *)(0x6000 + (offset & 0x1FFF)));
+    mmu_window_page_out(prev);
+    intrinsic_ei();
 
-    mmu2_page_out(prev);
     return value;
 }

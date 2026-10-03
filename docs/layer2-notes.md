@@ -150,38 +150,83 @@ reappeared in this test, at the same relative row spacing, confirming
 they're independent of what's actually drawn -- further support for the
 "ZEsarUX-side overlay, not a data bug" read.
 
-## Open, not chased further: a handful of stray single-pixel colours in screenshots, and the default palette
+## RESOLVED (post-M1): the stray single-pixel screenshot colours were real data corruption, not a ZEsarUX overlay -- root cause was the classic ROM's interrupt handler, not our own code
 
-A `save-screen`/ZRCP screenshot of the demo shows ~10 single-pixel spots
-in colours (white, orange, magenta, yellow) that **never appear anywhere
-in the direct memory reads above** -- the underlying framebuffer bytes at
-every row checked are clean. Two things ruled out by the memory-read
-evidence: this is not a `pico_pset()` corruption bug (the bytes are
-provably correct), and it's not simply "the default palette renders index
-0 oddly" (same conclusion -- the data is right, so any odd appearance is
-in the *display* path, not the *write* path). Most likely a ZEsarUX-side
-rendering artifact (a HUD/status overlay, or a brief ULA-layer bleed at
-specific scanlines) given the colours fall outside this test pattern's
-own 0-7 palette range entirely. Also open: indices 6 and 7 render
-visually near-black on screen despite their framebuffer bytes being
-correct (`06`/`07` exactly where expected) -- reading `REG_PALETTE_VALUE_8`
+The original read here concluded the stray pixels were a ZEsarUX rendering
+artifact, on the strength of one spot-check: a few specific rows read back
+clean via direct memory reads. **That spot-check didn't generalize, and
+the conclusion was wrong.** Revisited after the same dots reappeared in
+M1's completely different demo scene (see `gfx-notes.md`) -- a proper
+pixel-by-pixel screenshot diff against each column's own majority colour,
+followed by reading the *exact* framebuffer bytes at the flagged
+coordinates, found genuine stray values (`0xEF`, `0xED`) sitting in
+framebuffer locations this project's code had only ever written `0x00`
+(the border/letterbox area, cleared once by `pico_cls(0)` and never
+touched again). Real corruption, not a display artifact -- the first
+spot-check had simply gotten lucky and sampled rows that weren't hit.
+
+**Root cause**: this project's `pico_pset()`/`pico_cls()` page a Layer 2
+physical page into a fixed MMU window, write/clear through it, then page
+back out -- a brief but real critical section. The window originally used
+MMU slot 2 (`$4000-$5FFF`), which overlaps the classic ZX ROM's system
+variables area (`$5B00-$5CFF`) -- the same range `dark-room-next`'s own
+`docs/tilemap-notes.md` already flagged as hazardous for an unrelated
+reason. Since this project runs with interrupts enabled throughout (one
+`intrinsic_ei()` at startup), the ROM's 50Hz interrupt handler keeps
+scanning the keyboard and writing its own housekeeping bytes (almost
+certainly `KSTATE`, which the standard ROM keyboard scan updates every
+interrupt) into that fixed absolute address range -- regardless of which
+Layer 2 physical page happened to be paged into the window underneath it
+at that moment. An interrupt landing during the handful-of-microseconds
+window one `pico_pset()` call holds a page mapped is individually
+unlikely, but with tens of thousands of calls across a real scene, a few
+unlucky hits are expected -- matching exactly what was observed (a
+handful of corrupted bytes out of 49152, varying between runs).
+
+**Fix, and how it was actually verified**: two changes in `pico_video.c`.
+(1) Moved the MMU window from slot 2 to slot 3 (`$6000-$7FFF`, NextReg
+`$53`) -- clear of the ROM system variables range. This alone was
+**not** sufficient -- re-testing with a full memory dump (below) still
+showed corruption, meaning something can still land writes in that range
+too (not root-caused further; the ROM interrupt handler remains the prime
+suspect, but its exact reach wasn't pinned down byte-for-byte). (2) Wrapped
+every critical section in `intrinsic_di()`/`intrinsic_ei()`
+(`<intrinsic.h>`) -- this is the fix that actually mattered, confirmed by
+rigorous measurement, not inference: a Python script drove ZRCP to dump
+**all 48KB** of the Layer 2 framebuffer (all 6 physical pages, every
+byte, not a sample) after a 12-second stress run (600 interrupts' worth of
+opportunity, versus the few seconds the original spot-check ran), checked
+every byte outside the area this project's own demo actually draws to
+against the expected `0x00`, and found zero mismatches -- versus 14-15
+real mismatches using the same full-dump method before the DI/EI fix was
+added. This is the same "measure, don't assume" standard the project
+holds itself to elsewhere, applied properly this time: the dots looked
+cosmetic and were dismissed as an emulator quirk once; chasing them
+properly the second time found a genuine, fixable correctness bug.
+
+**Remaining open item, unrelated to the above**: indices 6 and 7 still
+render visually near-black on screen in some earlier spot-checks despite
+their framebuffer bytes being correct -- reading `REG_PALETTE_VALUE_8`
 back after setting `REG_PALETTE_INDEX` just echoed the index instead of a
 colour, so the *default* Layer 2 palette's actual RGB332 contents weren't
-pinned down this session. **Neither blocks M1**: the library will program
-its own palette explicitly once `pal()`/`palt()` exist (M3), at which
-point default-palette quirks stop mattering. Per `sprite-notes.md`'s own
-precedent for an unresolved ZEsarUX-only oddity: worth a real-hardware or
-second-emulator (CSpect/MAME) check before relying on default-palette
-behaviour, not worth chasing further in a spike whose actual goal (prove
-the access mechanism) is already solidly proven above.
+pinned down. Doesn't block M1/M2: the library will program its own
+palette explicitly once `pal()`/`palt()` land (M3), at which point default-
+palette quirks stop mattering -- but given the lesson just learned, this
+should get the same full-rigour re-check (not just dismissed) before M3
+actually ships `pal()`.
 
 ## Summary for M1
 
 - Access mechanism, resolution default, and page-crossing address math:
   proven, via direct memory reads, not just visual inspection.
 - `ZXN_WRITE_MMU2` is a dead end under `-clib=classic` -- use
-  `ZXN_WRITE_REG`/`ZXN_READ_REG` on NextReg `$52` instead, same pattern as
-  `bank.c`.
+  `ZXN_WRITE_REG`/`ZXN_READ_REG` directly instead, same pattern as
+  `bank.c`. **Use NextReg `$53` (MMU slot 3, `$6000-$7FFF`), not `$52`/slot
+  2** -- superseded post-M1, see the "RESOLVED" section above: slot 2
+  overlaps the ROM's system variables, and even after moving off it, every
+  access through this window must also be wrapped in
+  `intrinsic_di()`/`intrinsic_ei()` to actually stop interrupt-driven
+  corruption.
 - Any loop reaching all the way to `PICO_SCREEN_W`/`PICO_SCREEN_H` needs a
   counter wider than `uint8_t`.
 - Default Layer 2 palette contents and the handful of stray screenshot
