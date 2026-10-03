@@ -33,8 +33,30 @@ void pico_cls(uint8_t color);
 
 /* Writes/reads a single pixel's palette index, in LOGICAL canvas
  * coordinates -- x in [0, pico_screen_w), y in [0, pico_screen_h).
- * Out-of-range coordinates are not checked (same as Pico-8/PicoJS). */
+ * Out-of-range coordinates are not checked (same as Pico-8/PicoJS).
+ *
+ * Both always act on the current BACK buffer (see pico_flip() below) --
+ * pico_pget() therefore reflects what's been drawn so far *this frame*,
+ * not necessarily what's currently on screen: a region untouched since
+ * the last pico_flip() still holds whatever was drawn there two frames
+ * ago, not last frame. Fine for the common case (read back a pixel you
+ * just drew), a real limitation for anything reading untouched regions
+ * across frames -- see docs/input-notes.md's "double buffering" section. */
 void pico_pset(uint8_t x, uint8_t y, uint8_t color);
 uint8_t pico_pget(uint8_t x, uint8_t y);
+
+/* Presents everything drawn since the last pico_flip() and swaps which
+ * physical Layer 2 bank is the back (writable) buffer vs the displayed
+ * one. Call once per frame, after all of that frame's drawing is done --
+ * see docs/input-notes.md's "double buffering" section for why this
+ * exists (a sprite redrawn in place every frame, with no double
+ * buffering, visibly tears when the display's own scanout catches the
+ * framebuffer mid-redraw -- confirmed via real human testing, not just
+ * theory). Because the back buffer alternates between two physical
+ * banks, each one holds whatever was drawn into it *two* flips ago, not
+ * one -- any animated content must track per-buffer state accordingly
+ * (see the demo's own o_lit/x_lit/ball-position handling in
+ * games/demo/main.c for the pattern). */
+void pico_flip(void);
 
 #endif

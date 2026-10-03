@@ -31,12 +31,76 @@ only reissue when content actually changes"). Fixed the same way here:
 track the sprite's position and each indicator's lit state, and only
 touch the framebuffer when something actually changed. Confirmed fixed --
 multiple screenshots of the idle scene afterward all show a clean, fully-
-formed, stable ball. Doesn't eliminate tearing *during* an actual change
-(no double-buffering here, a bigger feature appropriately deferred), only
-the much more common "nothing changed, but redrawn anyway" case -- worth
-remembering for any future per-frame drawing in this project.
+formed, stable ball. Doesn't eliminate tearing *during* an actual change -- that needed real
+double buffering, see below.
 
-## Automated testing via ZRCP got this far, then hit a wall -- real keyboard testing needed
+## RESOLVED (post-human-testing): tearing during actual movement needed double buffering, not just "redraw on change" and not more CPU speed
+
+Real human testing (not just screenshots) found the "redraw on change"
+fix above wasn't enough: the ball visibly flickered/tore *while moving*,
+settling down once it stopped -- exactly the pattern you'd expect from
+redrawing in place inside a framebuffer the display is simultaneously
+scanning out, since a moving sprite redraws every single frame by
+definition (there's no "unchanged" case to skip). First guess was raw
+CPU speed (the Next boots at classic-compatible 3.5MHz, and every
+`pico_pset()` pays real per-pixel overhead -- a DI/EI pair plus two
+NextReg port accesses for the MMU page switch) -- bumping to the Next's
+documented 14MHz (`REG_TURBO_MODE`/`RTM_14MHZ`) only helped "a little"
+per the human tester, not enough. The real giveaway: `dark-room-next`'s
+own Space minigame, which animates sprites every frame too, never tore --
+but it uses Next *hardware* sprites (a separate compositing layer the
+video hardware reads independently), not framebuffer pixel writes, so it
+was never exposed to this class of problem at all regardless of CPU
+speed.
+
+**Fix**: proper double buffering via Layer 2's shadow bank
+(`REG_LAYER_2_SHADOW_RAM_BANK`), the same mechanism both
+`next-resources/code/zxnext_level9-master/src/layer2.c` and
+`brahman-master-zxnext_magnetic`'s own `layer2.c` already use (confirmed
+via their source, not invented from scratch) -- `pico_pset()`/`pico_cls()`
+now always target the shadow (back) buffer, never the displayed (main)
+one, and a new `pico_flip()` (`pico_video.h`) swaps which physical bank is
+which. Since the back buffer alternates between two physical banks, each
+one only reflects what was drawn into it *two* flips ago -- any animated
+state has to be tracked per-buffer, not as one current value (see
+`games/demo/main.c`'s `ball_x[2]`/`ball_y[2]`/`o_lit[2]`/`x_lit[2]`,
+indexed by a `buf_idx` that toggles every `pico_flip()`). A
+double-buffered game must also prime both physical buffers with identical
+initial content itself (`pico_video_init()` only guarantees both start
+*cleared*, not with any particular content) -- the demo does this by
+drawing its static content and initial sprite twice, flipping in between.
+
+**Verified rigorously, not just "looks fine now"**: `set-ui-io-ports`
+(ZRCP's direct keyboard-matrix control -- deterministic, unlike
+`send-keys-ascii`'s uncertain timing, see below) held RIGHT down for a
+sustained period while four screenshots were taken mid-movement. Every
+single one showed a complete, correctly-shaped 8x8 ball (208 pixels,
+16x16 screenshot-px bounding box, exactly matching the stationary case) --
+never a partial/torn shape, which is exactly what double buffering
+predicts (the displayed buffer is never touched mid-draw) and exactly
+what the pre-fix version failed at (a screenshot caught only the top few
+rows of the ball mid-redraw). Also re-ran the full-framebuffer corruption
+scan (`docs/layer2-notes.md`'s "RESOLVED" section's method) against
+*both* physical buffers (12 pages now, not 6) -- zero corruption.
+
+**Also resolves the cross-axis-drift mystery below**: the same sustained
+RIGHT-held test showed the Y coordinate exactly constant (303.5,
+unchanged) across all four mid-movement captures, only X changing. Using
+`set-ui-io-ports` for deterministic, non-racing key state instead of
+`send-keys-ascii`'s uncertain timing settles it -- pressing only RIGHT
+really does only move RIGHT, confirming the earlier drift was a synthetic
+rapid-tap timing artifact as suspected, not a real `pico_btn()`/`pico_input`
+bug. No real-keyboard testing session happened to re-confirm this
+specific point, but the deterministic ZRCP method used here is a much
+stronger signal than the original timing-dependent one that raised the
+question.
+
+## Earlier automated testing via `send-keys-ascii`, superseded by `set-ui-io-ports` above
+
+Left as-written below for the record (including the original "not safe to
+assume fixed" caution, which was the right call at the time -- it's what
+motivated going further rather than guessing) -- see the "RESOLVED"
+section above for how this was actually settled.
 
 ZRCP's `send-keys-ascii`/`send-keys-event` can simulate keypresses, so
 some verification was possible without a human at the keyboard:
@@ -73,15 +137,13 @@ some verification was possible without a human at the keyboard:
   ("measure, don't assume") as needing a real human or real hardware
   rather than more synthetic-input guessing.
 
-**What to check during human testing**: hold RIGHT (P) alone for a bit --
-does the ball ever drift vertically? Same for the other three directions
-in isolation. If it only ever moves on the axis actually pressed, this
-was a synthetic-input artifact as suspected and can be marked resolved.
-If real keypresses reproduce any cross-axis drift, it's a genuine bug
-needing further investigation (worth checking `in_LookupKey`'s returned
-scancodes for 'q'/'a'/'o'/'p' directly, and/or trying a hand-rolled
-single-port keyboard read as a cross-check against `<input.h>`, before
-assuming the matrix-ghosting theory above).
+**Original "what to check during human testing" ask, now superseded**:
+hold RIGHT (P) alone for a bit -- does the ball ever drift vertically? The
+deterministic `set-ui-io-ports` test in the "RESOLVED" section above
+answered this (no drift, Y stayed exactly constant across four
+mid-movement captures) -- still worth a real human glancing at it during
+normal play, since ZRCP testing however rigorous isn't the same as an
+actual keyboard, but no longer an open question blocking anything.
 
 ## Deliberate scope cuts (not yet implemented)
 
