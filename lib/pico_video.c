@@ -66,6 +66,10 @@ uint16_t pico_screen_h;
 static uint8_t origin_x;
 static uint8_t origin_y;
 
+/* pal()'s draw-time colour remap table -- see pico_pal()'s own comment.
+ * Identity by default (pal_table[c] == c), reset in pico_video_init(). */
+static uint8_t pal_table[16];
+
 /* Double buffering: pico_pset()/pico_pget()/pico_cls() always act on the
  * SHADOW bank (REG_LAYER_2_SHADOW_RAM_BANK) -- never the displayed MAIN
  * bank (REG_LAYER_2_RAM_BANK) -- so drawing never touches memory the
@@ -119,6 +123,7 @@ void pico_video_init(uint16_t logical_w, uint16_t logical_h) {
     pico_screen_h = logical_h;
     origin_x = (uint8_t)((PICO_PHYS_W - logical_w) / 2);
     origin_y = (uint8_t)((PICO_PHYS_H - logical_h) / 2);
+    pico_pal_reset();
 
     /* Allocate the shadow bank explicitly, 3 banks (one full 256x192
      * buffer, LAYER2_PAGES/2 16K banks) past whatever the main bank
@@ -154,6 +159,31 @@ void pico_video_init(uint16_t logical_w, uint16_t logical_h) {
     IO_LAYER_2_CONFIG = IL2C_SHOW_LAYER_2;
 }
 
+/* pal(c0, c1) -- remaps colour c0 to c1 for every subsequent draw call,
+ * until reset. Ported from PicoJS's picoJS.pal (picoJS.js ~line 758),
+ * minus the p=1 "screen palette" mode (a whole-framebuffer remap at flip
+ * time) -- PicoJS itself doesn't implement that either (see its own
+ * comment there), and no reference game needs it. Only remaps the
+ * standard 0-15 Pico-8 colour range -- the Next's native 16-255 range
+ * (this project's own extension beyond stock Pico-8, see the plan doc's
+ * palette design) is left untouched, matching that c0/c1 are Pico-8
+ * colour indices, not arbitrary Next ones.
+ *
+ * Applied centrally inside pico_pset() (below), not duplicated in every
+ * caller -- every other primitive (pico_gfx.c's shapes, pico_sprite.c's
+ * blits, pico_font.c's glyphs) already funnels every actual pixel write
+ * through pico_pset(), so this one change point is all that's needed for
+ * pal() to correctly affect sprites too, matching real Pico-8 (pal() is
+ * often used for sprite palette-swap effects). */
+void pico_pal(uint8_t c0, uint8_t c1) {
+    if (c0 < 16 && c1 < 16) pal_table[c0] = c1;
+}
+
+void pico_pal_reset(void) {
+    uint8_t i;
+    for (i = 0; i < 16; i++) pal_table[i] = i;
+}
+
 void pico_flip(void) {
     uint8_t main_bank = ZXN_READ_REG(REG_LAYER_2_RAM_BANK);
     uint8_t shadow_bank = ZXN_READ_REG(REG_LAYER_2_SHADOW_RAM_BANK);
@@ -164,6 +194,12 @@ void pico_flip(void) {
 void pico_cls(uint8_t color) {
     uint8_t base = layer2_base_page();
     uint8_t prev;
+
+    /* cls() writes raw bytes via memset, not pico_pset() -- unlike every
+     * other primitive, so it needs its own pal() remap applied here
+     * explicitly (PicoJS's own cls() goes through the same draw-palette
+     * remap as everything else, picoJS.js's resolveColour()). */
+    if (color < 16) color = pal_table[color];
 
     intrinsic_di();
     prev = mmu_window_page_in(base);
@@ -180,6 +216,8 @@ void pico_pset(uint8_t x, uint8_t y, uint8_t color) {
     uint16_t offset = (uint16_t)(origin_y + y) * PICO_PHYS_W + (origin_x + x);
     uint8_t base = layer2_base_page();
     uint8_t prev;
+
+    if (color < 16) color = pal_table[color];
 
     intrinsic_di();
     prev = mmu_window_page_in(base + (offset >> 13));

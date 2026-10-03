@@ -45,6 +45,18 @@ void pico_cls(uint8_t color);
 void pico_pset(uint8_t x, uint8_t y, uint8_t color);
 uint8_t pico_pget(uint8_t x, uint8_t y);
 
+/* pal(c0, c1) -- remaps colour c0 (0-15) to c1 (0-15) for every
+ * subsequent pico_cls()/pico_pset() call (and therefore every primitive
+ * built on them -- pico_gfx.c's shapes, pico_sprite.c's blits, text),
+ * until pico_pal_reset(). Matches Pico-8's own draw-palette pal(), minus
+ * its p=1 "screen palette" mode -- not implemented, same as PicoJS's own
+ * scope. Only the standard 0-15 Pico-8 range is remappable; this
+ * project's own 16-255 native-Next colour extension is untouched.
+ * pico_pget() is unaffected either way -- it reads back whatever was
+ * actually stored (i.e. already post-remap), matching real Pico-8. */
+void pico_pal(uint8_t c0, uint8_t c1);
+void pico_pal_reset(void);
+
 /* Presents everything drawn since the last pico_flip() and swaps which
  * physical Layer 2 bank is the back (writable) buffer vs the displayed
  * one. Call once per frame, after all of that frame's drawing is done --

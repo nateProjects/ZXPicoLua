@@ -12,11 +12,16 @@
  * sheet) but should be a multiple of 8 for the cell math to make sense. */
 void pico_spr_init(const uint8_t *sheet_data, uint16_t sheet_w, uint16_t sheet_h);
 
-/* The palette index treated as transparent (skipped) when blitting --
- * defaults to 0, matching Pico-8's own default palt() state. No palt()
- * yet (deferred to M3 alongside pal()) -- one global transparent colour
- * for now, not a per-colour table. */
-void pico_spr_transparent(uint8_t color);
+/* palt(c, transparent) -- sets whether colour c (0-15) is treated as
+ * transparent (skipped) when blitting sprites. Matches real Pico-8's
+ * palt(): any number of colours can be transparent at once (unlike M2's
+ * original pico_spr_transparent(), a single-colour placeholder this
+ * replaces). Defaults to colour 0 only, matching Pico-8's own default
+ * palt() state. Checked against the sprite sheet's RAW stored colour, not
+ * after pico_pal()'s remap (pico_video.h) -- the two are independent in
+ * real Pico-8 too: palt() decides whether a pixel is drawn at all, pal()
+ * separately decides what colour it's drawn as if it is. */
+void pico_palt(uint8_t color, uint8_t transparent);
 
 /* spr(n, x, y, w, h, flip_x, flip_y) -- draws sprite cell n (8x8, from the
  * registered sheet) at logical (x,y), 1:1 pixel scale. w/h (in whole 8px

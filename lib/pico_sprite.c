@@ -5,7 +5,11 @@
 static const uint8_t *sheet = 0;
 static uint16_t sheet_w = 0;
 static uint16_t sheet_h = 0;
-static uint8_t transparent_color = 0;
+/* One bit per Pico-8 colour (0-15) -- bit set means "transparent when
+ * blitting sprites". Defaults to colour 0 only (bit 0 set), matching
+ * Pico-8's own default palt() state; was a single uint8_t colour before
+ * M3's pico_palt() replaced it with this proper per-colour bitmask. */
+static uint16_t transparent_mask = 0x0001;
 
 void pico_spr_init(const uint8_t *sheet_data, uint16_t w, uint16_t h) {
     sheet = sheet_data;
@@ -13,8 +17,10 @@ void pico_spr_init(const uint8_t *sheet_data, uint16_t w, uint16_t h) {
     sheet_h = h;
 }
 
-void pico_spr_transparent(uint8_t color) {
-    transparent_color = color;
+void pico_palt(uint8_t color, uint8_t transparent) {
+    if (color >= 16) return;
+    if (transparent) transparent_mask |= (uint16_t)(1u << color);
+    else transparent_mask &= (uint16_t)~(1u << color);
 }
 
 /* Sheet pixel index as uint16_t: fine up to a 256x256 sheet (65536 would
@@ -52,7 +58,7 @@ void pico_sspr(uint8_t sx, uint8_t sy, uint8_t sw, uint8_t sh,
             if (flip_x) u = sw - 1 - u;
 
             color = sheet_pixel(sx + u, sy + v);
-            if (color == transparent_color) continue;
+            if (color < 16 && (transparent_mask & (1u << color))) continue;
 
             pset_safe((int16_t)dx + dxi, (int16_t)dy + dyi, color);
         }

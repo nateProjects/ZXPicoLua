@@ -25,6 +25,7 @@
 #include "pico_sprite.h"
 #include "pico_sprite_data.h"
 #include "pico_input.h"
+#include "m3_test.h"
 
 #define BALL_MIN 0
 #define BALL_MAX 120 /* 128 - 8 (sprite size), keeps the ball fully on screen */
@@ -40,18 +41,25 @@ int main(void) {
     uint8_t new_px, new_py, new_o, new_x;
     uint8_t buf_idx;
     uint8_t ball_x[2], ball_y[2], o_lit[2], x_lit[2];
-    uint8_t i;
+    uint8_t i, m3_pass;
 
     intrinsic_ei(); /* --tbblue-fast-boot-mode leaves interrupts off */
 
     pico_video_init(128, 128);
     pico_spr_init(demo_sheet_data, DEMO_SHEET_W, DEMO_SHEET_H);
-    pico_spr_transparent(0);
+    /* pico_palt() (M3) defaults to colour 0 transparent already -- no
+     * explicit call needed unless a game wants something different. */
+
+    /* Runs exactly once (not inside the priming loop below) -- see
+     * m3_test.h for why: it includes a cartdata boot counter that would
+     * double-count if run once per buffer. */
+    m3_pass = m3_run_checks();
 
     /* Prime both physical buffers with identical starting content. */
     buf_idx = 0;
     for (i = 0; i < 2; i++) {
         draw_static_content();
+        m3_draw(m3_pass);
         pico_spr(0, px, py, 1, 1, 0, 0);
         ball_x[buf_idx] = px;
         ball_y[buf_idx] = py;

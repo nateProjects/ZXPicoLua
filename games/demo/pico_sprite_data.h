@@ -9,7 +9,7 @@
  * 11), deliberately asymmetric under both horizontal and vertical flip,
  * so flip_x/flip_y actually prove something visually instead of looking
  * identical either way. Cells 2/3 (bottom row) are blank. Colour 0 is
- * transparent (pico_spr_transparent()'s default). Generated
+ * transparent (pico_palt()'s default). Generated
  * programmatically from an 8x8 ASCII pattern, not hand-transcribed as a
  * flat array -- see the project history for the generating script. */
 
