@@ -1,70 +1,80 @@
-/* M1/M2 demo: exercises every pico_gfx.c and pico_sprite.c primitive in
- * one static scene within a 128x128 logical canvas (Pico-8's own native
- * resolution), so a correct render proves rect/rectfill, line,
- * circ/circfill, oval/ovalfill, fillp dithering, the bitmap-font print(),
- * and spr()/sspr() (cell selection, transparency, flip_x/flip_y, and
- * nearest-neighbour scaling) all work together -- not just individually.
- * See docs/gfx-notes.md and docs/sprite-notes.md for the verification
- * screenshots. */
+/* M2.5 demo: interactive input test. A ball sprite moves around the
+ * 128x128 logical canvas under btn()/btnp() (pico_input.h), plus two
+ * small indicator boxes: one lit solid while button O is held, the other
+ * flashing for exactly one frame on each button X *press* (not hold) --
+ * so held-vs-just-pressed semantics (pico_btn() vs pico_btnp()) are both
+ * independently visible, not just "does any input work at all". Keys:
+ * Q/A/O/P for up/down/left/right (classic Spectrum "QAOP" convention --
+ * the matrix this reads has no real arrow-key signals of its own), Z/X
+ * for the two action buttons (Pico-8's own real keyboard defaults).
+ *
+ * The M1/M2 static shape/sprite showcase this replaced already did its
+ * job (screenshotted and verified, see docs/gfx-notes.md and
+ * docs/sprite-notes.md) -- no need to keep re-rendering it every frame
+ * alongside a focused input test. */
 
 #include <intrinsic.h>
 #include "pico_video.h"
 #include "pico_gfx.h"
 #include "pico_sprite.h"
 #include "pico_sprite_data.h"
+#include "pico_input.h"
+
+#define BALL_MIN 0
+#define BALL_MAX 120 /* 128 - 8 (sprite size), keeps the ball fully on screen */
 
 int main(void) {
+    uint8_t px = 60, py = 60;
+    uint8_t new_px, new_py;
+    uint8_t o_lit = 0, x_lit = 0, new_o_lit, new_x_lit;
+
     intrinsic_ei(); /* --tbblue-fast-boot-mode leaves interrupts off */
 
     pico_video_init(128, 128);
-
-    pico_print("ZXPICOLUA", 4, 4, 7);
-    pico_print("M1 GFX DEMO", 4, 12, 6);
-
-    pico_rectfill(4, 24, 36, 48, 2);
-    pico_rect(4, 24, 36, 48, 7);
-
-    pico_line(44, 24, 76, 48, 8);
-    pico_line(76, 24, 44, 48, 8);
-
-    pico_circfill(100, 36, 12, 9);
-    pico_circ(100, 36, 12, 7);
-
-    pico_ovalfill(4, 60, 60, 84, 11);
-    pico_oval(4, 60, 60, 84, 7);
-
-    /* fillp: a 50% checkerboard dither, two-colour (primary 1, secondary
-     * 10 via the >15 colour-argument convention). 0xA5A5 alternates both
-     * per-column AND per-row (row0/2 = 1010, row1/3 = 0101) for a true
-     * checkerboard -- 0xAAAA (every row = 1010) looked right on paper but
-     * actually renders as vertical stripes, caught by screenshot
-     * verification, not by inspection; see docs/gfx-notes.md. */
-    pico_fillp(0xA5A5, 0);
-    pico_rectfill(70, 60, 124, 84, 1 | (10 << 4));
-    pico_fillp(0, 0);
-
-    pico_cursor(4, 90);
-    pico_print_at_cursor("SPR BELOW", 10);
-
-    /* spr(): a symmetric sprite (the ball, cell 0 -- a flip-correctness
-     * control, should look identical regardless of flip args) next to an
-     * asymmetric one (the "L", cell 1) drawn plain and in all three flip
-     * combinations, so flip_x/flip_y are visually provable, not just
-     * assumed to do something. */
     pico_spr_init(demo_sheet_data, DEMO_SHEET_W, DEMO_SHEET_H);
     pico_spr_transparent(0);
 
-    pico_spr(0, 4, 100, 1, 1, 0, 0);  /* ball */
-    pico_spr(1, 16, 100, 1, 1, 0, 0); /* L, plain */
-    pico_spr(1, 28, 100, 1, 1, 1, 0); /* L, flip_x */
-    pico_spr(1, 40, 100, 1, 1, 0, 1); /* L, flip_y */
-    pico_spr(1, 52, 100, 1, 1, 1, 1); /* L, flip_x + flip_y */
+    pico_print("MOVE: Q A O P", 4, 4, 7);
+    pico_print("O:Z  X:X", 4, 12, 7);
 
-    /* sspr(): the same "L" cell (sheet coords 8,0,8,8 -- matches
-     * pico_spr()'s own math for cell 1) nearest-neighbour scaled 3x. */
-    pico_sspr(8, 0, 8, 8, 80, 98, 24, 24, 0, 0);
+    pico_spr(0, px, py, 1, 1, 0, 0);
 
     for (;;) {
-        intrinsic_halt();
+        intrinsic_halt(); /* blocks until the next 50Hz interrupt/frame */
+        pico_input_update();
+
+        /* Only touch the framebuffer where something actually changed --
+         * an unconditional erase+redraw every single frame (even while
+         * stationary) let the video hardware's own raster scanout
+         * occasionally catch a mid-redraw frame, visibly tearing the
+         * sprite -- same class of issue dark-room-next's own
+         * docs/tilemap-notes.md hit and fixed for text, for the same
+         * reason: redraw on change, not unconditionally every frame. */
+        new_px = px;
+        new_py = py;
+        if (pico_btn(PICO_BTN_LEFT)  && new_px > BALL_MIN) new_px--;
+        if (pico_btn(PICO_BTN_RIGHT) && new_px < BALL_MAX) new_px++;
+        if (pico_btn(PICO_BTN_UP)    && new_py > BALL_MIN) new_py--;
+        if (pico_btn(PICO_BTN_DOWN)  && new_py < BALL_MAX) new_py++;
+
+        if (new_px != px || new_py != py) {
+            pico_rectfill(px, py, px + 7, py + 7, 0); /* erase old position */
+            px = new_px;
+            py = new_py;
+            pico_spr(0, px, py, 1, 1, 0, 0);
+        }
+
+        /* O: solid while held. X: lit for exactly the one frame it was
+         * just pressed, otherwise cleared. */
+        new_o_lit = pico_btn(PICO_BTN_O) ? 1 : 0;
+        if (new_o_lit != o_lit) {
+            pico_rectfill(116, 4, 123, 11, new_o_lit ? 8 : 0);
+            o_lit = new_o_lit;
+        }
+        new_x_lit = pico_btnp(PICO_BTN_X) ? 1 : 0;
+        if (new_x_lit != x_lit) {
+            pico_rectfill(116, 16, 123, 23, new_x_lit ? 11 : 0);
+            x_lit = new_x_lit;
+        }
     }
 }
