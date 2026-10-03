@@ -92,10 +92,41 @@ static int16_t octspeed, bubblelimit, fishnum;
 
 static uint8_t curcol; /* this file's own "current colour" tracking -- see top comment */
 
+/* --- redraw-on-change tracking (performance fix, post-human-testing) ---
+ *
+ * The original port called back() -- a full pico_cls() + a 192-tile
+ * ocean map() + a 2x128-tile scrolling ship -- unconditionally every
+ * single frame, mirroring real Pico-8's own "just redraw everything in
+ * _draw()" idiom. That's fine on Pico-8's own highly optimised engine;
+ * on this library's software pixel-pushing it meant redrawing a
+ * completely static 320-tile background from scratch 50+ times a second,
+ * which human testing confirmed made even the title screen's ship --
+ * which only actually moves once every 30 frames -- sluggish and the
+ * whole game barely responsive, the same "redraw on change, not every
+ * frame" lesson games/demo/main.c already learned the hard way in M2.5
+ * (see docs/input-notes.md), just not yet applied here.
+ *
+ * Because the back buffer alternates between two physical banks
+ * (pico_flip(), pico_video.h), each one lags the other by one flip --
+ * tracked per buffer (`[2]`), same pattern as games/demo/main.c's own
+ * ball_x[2]/o_lit[2]. buf_idx itself is set once per frame in main(). */
+static uint8_t buf_idx;
+static uint8_t last_mode[2] = { 0xFF, 0xFF };   /* 0xFF: force a full redraw the first time each buffer is used */
+static int16_t last_sx_drawn[2] = { -999, -999 };
+
 #define MODE_TITLE 0
 #define MODE_HARD_SELECT 3
 #define MODE_WIN 6
 #define MODE_DEATH 9
+
+/* The four menu-style screens, with no moving sprites of their own
+ * (besides the ship, handled separately in shipshow()) -- see back()'s
+ * own comment for why only these get the "skip the ocean redraw when
+ * nothing changed" optimization; gameplay (mode 1) always needs a full
+ * redraw until its own moving sprites get proper erase tracking. */
+static uint8_t mode_is_static(uint8_t m) {
+    return m == MODE_TITLE || m == MODE_HARD_SELECT || m == MODE_WIN || m == MODE_DEATH;
+}
 
 static void centre_print(const char *s, uint8_t y) {
     uint8_t len = (uint8_t)strlen(s);
@@ -157,16 +188,45 @@ static void octmove(void) {
 }
 
 static void shipshow(void) {
-    pico_pal(2, 12); /* "don't ask -)" -- preserved verbatim from the original */
-    pico_map(0, 0, sx, 0, 16, 4);
+    /* Advance the scroll position unconditionally (state, not drawing --
+     * cheap, always correct to do every frame regardless of mode). Only
+     * the two map() calls (256 tiles between them) are gated on this
+     * buffer's own ship position actually being stale. */
     if (frame % 30 == 1) sx++;
     if (sx >= 128) sx = 1;
-    pico_map(0, 0, (int16_t)(sx - 128), 0, 16, 4);
+
+    if (sx != last_sx_drawn[buf_idx]) {
+        pico_pal(2, 12); /* "don't ask -)" -- preserved verbatim from the original */
+        pico_map(0, 0, sx, 0, 16, 4);
+        pico_map(0, 0, (int16_t)(sx - 128), 0, 16, 4);
+        last_sx_drawn[buf_idx] = sx;
+    }
 }
 
 static void back(void) {
-    pico_cls(0);
-    pico_map(0, 4, 0, 32, 16, 12);
+    /* The ocean (192 tiles) never changes -- only redraw it (and clear
+     * the screen) when this buffer is showing a different mode than last
+     * time, not every frame. Forces a fresh ship redraw too, since a
+     * mode change just wiped it.
+     *
+     * Gameplay (mode 1) is the one exception: unlike the static menu
+     * screens, cab/creatures/octopus move every frame on top of the
+     * ocean, and used to rely on the OLD unconditional full redraw to
+     * implicitly erase their previous position -- skipping that redraw
+     * here (as this fix originally did unconditionally) left visible
+     * ghost trails, caught by a human playtest, not predicted in advance.
+     * Always force a full redraw during gameplay until each moving
+     * element gets its own proper per-buffer erase/redraw tracking
+     * (the games/demo/main.c ball_x[2]-style pattern) -- a real further
+     * optimization, just not done yet. The menu screens (title/hard-
+     * select/win/death) have no moving sprites of their own (only the
+     * ship, already handled below), so they get the full benefit now. */
+    if (mode != last_mode[buf_idx] || !mode_is_static(mode)) {
+        pico_cls(0);
+        pico_map(0, 4, 0, 32, 16, 12);
+        last_mode[buf_idx] = mode;
+        last_sx_drawn[buf_idx] = -999;
+    }
     shipshow();
 }
 
@@ -451,6 +511,7 @@ int main(void) {
     pico_map_init((uint8_t *)picodiver_map_data, PICODIVER_MAP_W, PICODIVER_MAP_H);
 
     titleinit();
+    buf_idx = 0;
 
     for (;;) {
         intrinsic_halt();
@@ -470,5 +531,6 @@ int main(void) {
         else gamedraw();
 
         pico_flip();
+        buf_idx ^= 1;
     }
 }
