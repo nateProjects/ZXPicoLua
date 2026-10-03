@@ -28,6 +28,7 @@
 
 #define BALL_MIN 0
 #define BALL_MAX 120 /* 128 - 8 (sprite size), keeps the ball fully on screen */
+#define MOVE_SPEED 3 /* pixels/frame while a direction is held (was 1) */
 
 static void draw_static_content(void) {
     pico_print("MOVE: Q A O P", 4, 4, 7);
@@ -66,10 +67,14 @@ int main(void) {
 
         new_px = px;
         new_py = py;
-        if (pico_btn(PICO_BTN_LEFT)  && new_px > BALL_MIN) new_px--;
-        if (pico_btn(PICO_BTN_RIGHT) && new_px < BALL_MAX) new_px++;
-        if (pico_btn(PICO_BTN_UP)    && new_py > BALL_MIN) new_py--;
-        if (pico_btn(PICO_BTN_DOWN)  && new_py < BALL_MAX) new_py++;
+        if (pico_btn(PICO_BTN_LEFT))
+            new_px = (new_px >= BALL_MIN + MOVE_SPEED) ? new_px - MOVE_SPEED : BALL_MIN;
+        if (pico_btn(PICO_BTN_RIGHT))
+            new_px = (new_px <= BALL_MAX - MOVE_SPEED) ? new_px + MOVE_SPEED : BALL_MAX;
+        if (pico_btn(PICO_BTN_UP))
+            new_py = (new_py >= BALL_MIN + MOVE_SPEED) ? new_py - MOVE_SPEED : BALL_MIN;
+        if (pico_btn(PICO_BTN_DOWN))
+            new_py = (new_py <= BALL_MAX - MOVE_SPEED) ? new_py + MOVE_SPEED : BALL_MAX;
 
         /* Compare against THIS buffer's own last-known position (not the
          * authoritative px/py) -- this buffer may still show where the
