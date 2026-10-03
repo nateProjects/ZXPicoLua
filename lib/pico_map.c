@@ -42,7 +42,7 @@ void pico_fset_all(uint8_t n, uint8_t flags) {
     sprite_flags[n] = flags;
 }
 
-static void map_draw(uint8_t cel_x, uint8_t cel_y, uint8_t sx, uint8_t sy,
+static void map_draw(uint8_t cel_x, uint8_t cel_y, int16_t sx, int16_t sy,
                       uint8_t cel_w, uint8_t cel_h, uint8_t layer_filter, uint8_t layer_mask) {
     uint8_t dx, dy, tile;
     uint16_t tx, ty;
@@ -61,7 +61,7 @@ static void map_draw(uint8_t cel_x, uint8_t cel_y, uint8_t sx, uint8_t sy,
                     /* Pico-8 convention: tile 0 is always "empty", never
                      * drawn -- ported from PicoJS's own picoJS.map. */
                     if (tile != 0 && (!layer_filter || (sprite_flags[tile] & layer_mask) != 0)) {
-                        pico_spr(tile, (uint8_t)(sx + dx * 8), (uint8_t)(sy + dy * 8), 1, 1, 0, 0);
+                        pico_spr(tile, (int16_t)(sx + dx * 8), (int16_t)(sy + dy * 8), 1, 1, 0, 0);
                     }
                 }
                 if (dx == cel_w - 1) break;
@@ -73,10 +73,10 @@ static void map_draw(uint8_t cel_x, uint8_t cel_y, uint8_t sx, uint8_t sy,
     }
 }
 
-void pico_map(uint8_t cel_x, uint8_t cel_y, uint8_t sx, uint8_t sy, uint8_t cel_w, uint8_t cel_h) {
+void pico_map(uint8_t cel_x, uint8_t cel_y, int16_t sx, int16_t sy, uint8_t cel_w, uint8_t cel_h) {
     map_draw(cel_x, cel_y, sx, sy, cel_w, cel_h, 0, 0);
 }
 
-void pico_map_layer(uint8_t cel_x, uint8_t cel_y, uint8_t sx, uint8_t sy, uint8_t cel_w, uint8_t cel_h, uint8_t layer_mask) {
+void pico_map_layer(uint8_t cel_x, uint8_t cel_y, int16_t sx, int16_t sy, uint8_t cel_w, uint8_t cel_h, uint8_t layer_mask) {
     map_draw(cel_x, cel_y, sx, sy, cel_w, cel_h, 1, layer_mask);
 }

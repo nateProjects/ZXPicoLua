@@ -35,37 +35,68 @@ static uint8_t sheet_pixel(uint16_t sx, uint16_t sy) {
 /* Same reasoning as pico_gfx.c's pset_safe(): destination coordinates here
  * are derived (dx+u, dy+v for a sprite near a screen edge), so they can
  * legitimately go out of logical-canvas range for an ordinary partly
- * off-screen sprite -- clip instead of letting pico_pset()'s raw uint8_t
- * cast wrap and corrupt the framebuffer. */
-static void pset_safe(int16_t x, int16_t y, uint8_t color) {
+ * off-screen sprite -- clip instead of letting the raw uint8_t cast wrap
+ * and corrupt the framebuffer. Writes through the batch-write session
+ * (pico_video.h) rather than pico_pset() directly -- see pico_sspr()'s
+ * own comment for why. */
+static void batch_pset_safe(int16_t x, int16_t y, uint8_t color) {
     if (x < 0 || y < 0 || x >= (int16_t)pico_screen_w || y >= (int16_t)pico_screen_h) return;
-    pico_pset((uint8_t)x, (uint8_t)y, color);
+    pico_video_batch_pset((uint8_t)x, (uint8_t)y, color);
 }
 
 void pico_sspr(uint8_t sx, uint8_t sy, uint8_t sw, uint8_t sh,
-               uint8_t dx, uint8_t dy, uint8_t dw, uint8_t dh,
+               int16_t dx, int16_t dy, uint8_t dw, uint8_t dh,
                uint8_t flip_x, uint8_t flip_y) {
     uint16_t dxi, dyi, u, v;
-    uint8_t color;
+    uint8_t color, prev_page;
+    /* 1:1 (no scaling) is by far the common case -- every pico_spr() call
+     * (so every sprite AND every map() tile) hits it, since pico_spr()
+     * always calls through with sw==dw/sh==dh by construction. The
+     * general scaled path below needs a 32-bit multiply+divide per pixel
+     * to map a dest offset back to a source offset -- real z88dk/Z80
+     * software 32-bit division, not a single instruction -- and doing
+     * that unconditionally, even when the scale factor is always exactly
+     * 1, measured as a dominant cost in a real scene (M4's picodiver
+     * map() draw: ~10+ seconds for one 16x12-tile call before this fix,
+     * not the sub-200ms a per-pixel-overhead estimate alone would
+     * suggest -- see docs/picodiver-notes.md). This fast path skips the
+     * multiply/divide entirely when no scaling is actually happening. */
+    uint8_t scaled = (sw != dw) || (sh != dh);
 
     if (!sheet || dw == 0 || dh == 0 || sw == 0 || sh == 0) return;
 
+    /* The other dominant cost, found profiling the same scene: pico_pset()
+     * redoes an interrupt-disable + MMU page resolution for every single
+     * pixel, even though an 8x8 tile's pixels almost always land in the
+     * same physical page. The batch session (pico_video.h) resolves that
+     * once per CALL instead of once per PIXEL. */
+    prev_page = pico_video_batch_begin();
+
     for (dyi = 0; dyi < dh; dyi++) {
-        v = (uint16_t)((uint32_t)dyi * sh / dh);
+        if (scaled) v = (uint16_t)((uint32_t)dyi * sh / dh);
+        else v = dyi;
         if (flip_y) v = sh - 1 - v;
         for (dxi = 0; dxi < dw; dxi++) {
-            u = (uint16_t)((uint32_t)dxi * sw / dw);
+            if (scaled) u = (uint16_t)((uint32_t)dxi * sw / dw);
+            else u = dxi;
             if (flip_x) u = sw - 1 - u;
 
             color = sheet_pixel(sx + u, sy + v);
             if (color < 16 && (transparent_mask & (1u << color))) continue;
 
-            pset_safe((int16_t)dx + dxi, (int16_t)dy + dyi, color);
+            batch_pset_safe(dx + (int16_t)dxi, dy + (int16_t)dyi, color);
         }
     }
+
+    pico_video_batch_end(prev_page);
 }
 
-void pico_spr(uint8_t n, uint8_t x, uint8_t y, uint8_t w, uint8_t h, uint8_t flip_x, uint8_t flip_y) {
+uint8_t pico_sget(uint8_t x, uint8_t y) {
+    if (!sheet || x >= sheet_w || y >= sheet_h) return 0;
+    return sheet_pixel(x, y);
+}
+
+void pico_spr(uint8_t n, int16_t x, int16_t y, uint8_t w, uint8_t h, uint8_t flip_x, uint8_t flip_y) {
     uint16_t cells_per_row, cell_col, cell_row, sx, sy, sw, sh;
 
     if (!sheet || sheet_w < 8) return;

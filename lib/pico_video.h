@@ -71,4 +71,31 @@ void pico_pal_reset(void);
  * games/demo/main.c for the pattern). */
 void pico_flip(void);
 
+/* Batch-write session: writes many pixels (pico_video_batch_pset()) under
+ * ONE interrupt-disable + MMU page resolution instead of pico_pset()'s
+ * usual per-pixel cost, only re-selecting the physical page when it
+ * actually changes between pixels -- added for M4 after profiling found
+ * this was the dominant cost in a real sprite/tile-heavy scene (see
+ * pico_video.c's own comment for the measurement). Intended for a
+ * library primitive blitting many pixels at once (pico_sprite.c's
+ * pico_sspr(), the first user) -- not for general game code, which
+ * should keep using the simpler pico_pset(). Keep a batch to one sprite/
+ * tile's worth of pixels: interrupts stay off for the WHOLE batch, and a
+ * long batch means a long window the M0 interrupt-corruption fix
+ * (docs/layer2-notes.md) can't preempt at all.
+ *
+ *   uint8_t prev = pico_video_batch_begin();
+ *   pico_video_batch_pset(x, y, color);  // repeat as needed
+ *   pico_video_batch_end(prev);
+ *
+ * pico_video_batch_pset() applies pico_pal()'s remap exactly like
+ * pico_pset() does, and does NOT bounds-check (also like pico_pset()) --
+ * a caller with coordinates that can go out of logical-canvas range
+ * (e.g. a partly off-screen sprite) must clip before calling, the same
+ * requirement pico_sprite.c's own pset_safe() already meets for
+ * pico_pset(). */
+uint8_t pico_video_batch_begin(void);
+void pico_video_batch_pset(uint8_t x, uint8_t y, uint8_t color);
+void pico_video_batch_end(uint8_t previous_page);
+
 #endif

@@ -51,4 +51,15 @@ void pico_srand(uint16_t seed);
  * with this module being integer-only -- see this header's top comment. */
 uint16_t pico_rnd(uint16_t n);
 
+/* tostr(val) -- decimal integer to string, writing into a caller-provided
+ * buffer (at least 7 bytes: "-32768\0") rather than returning an
+ * allocated string, the standard embedded-C idiom. Added for M4's
+ * picodiver port, whose HUD concatenates a score/level number into
+ * on-screen text ("fish " + cab.score) -- cut from M3's scope (see this
+ * header's top comment) for lack of a real reference-game need at the
+ * time; this is that need. No hex/no-flags-equivalent variants (Pico-8's
+ * own tostr() flags) -- just the plain decimal case, the only one this
+ * project has a real use for so far. */
+void pico_tostr_int(int16_t val, char *buf);
+
 #endif

@@ -94,3 +94,17 @@ uint16_t pico_rnd(uint16_t n) {
     if (n == 0) return 0;
     return (uint16_t)(rng_advance(rng_to_raw(n)) >> 16);
 }
+
+void pico_tostr_int(int16_t val, char *buf) {
+    char tmp[6];
+    uint8_t i = 0, j = 0;
+    uint16_t v;
+    uint8_t neg = 0;
+
+    if (val < 0) { neg = 1; v = (uint16_t)(-(int32_t)val); } else v = (uint16_t)val;
+    if (v == 0) { buf[0] = '0'; buf[1] = 0; return; }
+    while (v > 0) { tmp[i++] = (char)('0' + (v % 10)); v = (uint16_t)(v / 10); }
+    if (neg) buf[j++] = '-';
+    while (i > 0) buf[j++] = tmp[--i];
+    buf[j] = 0;
+}

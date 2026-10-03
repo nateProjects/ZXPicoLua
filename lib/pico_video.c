@@ -107,16 +107,29 @@ void pico_video_init(uint16_t logical_w, uint16_t logical_h) {
      * holds under --tbblue-fast-boot-mode too. */
 
     /* The Next boots at classic-compatible 3.5MHz and stays there unless
-     * asked otherwise. Every pico_pset() pays real per-pixel overhead
-     * (an interrupt-disable/enable pair plus two NextReg port accesses
-     * for the MMU page switch, on top of the actual byte write) --
-     * observed (M2.5 human testing, see docs/input-notes.md) as visible
-     * tearing on a moving sprite at the default speed, consistent with a
-     * frame's worth of pixel writes still being in flight when the
-     * display's own scanout catches up to them. Requesting the Next's
-     * fastest documented-in-this-z88dk-checkout speed (14MHz, 4x
-     * headroom) here, once, is the cheapest possible first thing to try
-     * before restructuring the draw path itself. */
+     * asked otherwise; every pico_pset() pays real per-pixel overhead
+     * (DI/EI plus NextReg port accesses for the MMU page switch) that
+     * made this matter in practice -- first as visible tearing at the
+     * default speed (M2.5 human testing, docs/input-notes.md), then as
+     * multi-second single-frame draws once M4's picodiver port exercised
+     * map()/spr() at real scale (docs/picodiver-notes.md).
+     *
+     * Tried 28MHz (raw register value 3 -- this z88dk checkout's zxn.h
+     * doesn't name a constant past RTM_14MHZ) at the user's suggestion,
+     * with and without also disabling memory contention
+     * (REG_PERIPHERAL_3/RP3_DISABLE_CONTENTION). Both variants broke
+     * keyboard input -- a key held via ZRCP's deterministic
+     * set-ui-io-ports (the same method that reliably worked throughout
+     * M2.5) no longer registered, even held for several seconds, while
+     * the exact same test against a 14MHz build transitioned correctly.
+     * Narrowed to the speed change itself, not contention (both with and
+     * without RP3_DISABLE_CONTENTION failed identically) -- root cause
+     * not yet understood (pico_input.c reads the keyboard matrix via
+     * in_KeyPressed(), an instantaneous read with no debounce timing that
+     * should obviously depend on, so why raw CPU speed would affect it
+     * isn't yet explained). Reverted to the proven-reliable 14MHz rather
+     * than ship something with broken input -- see docs/picodiver-notes.md
+     * for the full writeup; worth revisiting if more speed is needed. */
     ZXN_WRITE_REG(REG_TURBO_MODE, RTM_14MHZ);
 
     pico_screen_w = logical_w;
@@ -223,6 +236,55 @@ void pico_pset(uint8_t x, uint8_t y, uint8_t color) {
     prev = mmu_window_page_in(base + (offset >> 13));
     *((uint8_t *)(0x6000 + (offset & 0x1FFF))) = color;
     mmu_window_page_out(prev);
+    intrinsic_ei();
+}
+
+/* --- batch-write session ---------------------------------------------
+ *
+ * Added for M4: profiling picodiver's real map()/spr()-heavy scenes
+ * found pico_pset()'s per-pixel cost (DI/EI, a layer2_base_page() port
+ * read, and an MMU page-select port write, ALL repeated for every single
+ * pixel) was the dominant cost once pico_sspr()'s needless scaling
+ * divide was already removed -- a 16x12-tile map() draw still took
+ * multiple seconds. An 8x8 sprite/tile's destination pixels usually fall
+ * in the SAME physical page (pages are 32 rows tall) -- re-selecting it
+ * 64 times for one tile is pure waste. This session API resolves the
+ * base page and disables interrupts ONCE for a whole batch of pixels
+ * (pico_sprite.c's pico_sspr() is the first user), only re-writing the
+ * MMU register when the page actually changes between pixels, which for
+ * a single on-screen tile is rare (at most once, at a page boundary).
+ *
+ * Interrupts stay disabled for the WHOLE batch, not per pixel -- keep a
+ * batch to one sprite/tile's worth of pixels (not, say, an entire frame)
+ * for the same reason pico_pset()'s own critical section has to stay
+ * brief (docs/layer2-notes.md's "RESOLVED" section: an interrupt handler
+ * can corrupt whatever page is paged in if it fires mid-access; a long
+ * batch means a long window where that can't be preempted at all). */
+static uint8_t batch_base_page;
+static uint8_t batch_current_page;
+
+uint8_t pico_video_batch_begin(void) {
+    intrinsic_di();
+    batch_base_page = layer2_base_page();
+    batch_current_page = 0xFF; /* sentinel: no page selected yet this batch */
+    return ZXN_READ_REG(MMU_SLOT_3_REG);
+}
+
+void pico_video_batch_pset(uint8_t x, uint8_t y, uint8_t color) {
+    uint16_t offset = (uint16_t)(origin_y + y) * PICO_PHYS_W + (origin_x + x);
+    uint8_t page = batch_base_page + (offset >> 13);
+
+    if (color < 16) color = pal_table[color];
+
+    if (page != batch_current_page) {
+        ZXN_WRITE_REG(MMU_SLOT_3_REG, page);
+        batch_current_page = page;
+    }
+    *((uint8_t *)(0x6000 + (offset & 0x1FFF))) = color;
+}
+
+void pico_video_batch_end(uint8_t previous_page) {
+    ZXN_WRITE_REG(MMU_SLOT_3_REG, previous_page);
     intrinsic_ei();
 }
 

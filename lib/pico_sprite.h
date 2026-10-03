@@ -29,15 +29,36 @@ void pico_palt(uint8_t color, uint8_t transparent);
  * scale factor -- matches real Pico-8 spr() semantics exactly (pico_sspr()
  * below is the one that scales). Pico-8 defaults w/h to 1 when omitted;
  * pass 1 explicitly here, no implicit default (same explicit-argument
- * policy as pico_gfx.h, for the same reason). */
-void pico_spr(uint8_t n, uint8_t x, uint8_t y, uint8_t w, uint8_t h, uint8_t flip_x, uint8_t flip_y);
+ * policy as pico_gfx.h, for the same reason).
+ *
+ * x/y are signed (int16_t), unlike every other logical-canvas coordinate
+ * in this library (which are uint8_t) -- a sprite partly off the left/top
+ * edge is ordinary, not misuse (pset_safe() inside pico_sspr() already
+ * clips it correctly either way), and some real techniques (a scrolling
+ * background drawn via two map() calls, one at the normal position and
+ * one a full screen-width to its left/right to cover the wrap) need to
+ * *start* off-screen on purpose -- added for M4's picodiver port, whose
+ * title-screen ship background does exactly this. Small positive literals
+ * at existing call sites still just work (plain int-to-int16_t
+ * conversion). */
+void pico_spr(uint8_t n, int16_t x, int16_t y, uint8_t w, uint8_t h, uint8_t flip_x, uint8_t flip_y);
 
 /* sspr(sx, sy, sw, sh, dx, dy, dw, dh, flip_x, flip_y) -- blits an
  * arbitrary sheet rectangle to an arbitrary destination rectangle,
  * nearest-neighbour scaled if dw/dh differ from sw/sh. This is the
- * general blit pico_spr() itself is implemented on top of. */
+ * general blit pico_spr() itself is implemented on top of. dx/dy are
+ * signed for the same reason as pico_spr()'s x/y above; sx/sy (the
+ * SOURCE sheet position) stay uint8_t -- those are never negative. */
 void pico_sspr(uint8_t sx, uint8_t sy, uint8_t sw, uint8_t sh,
-               uint8_t dx, uint8_t dy, uint8_t dw, uint8_t dh,
+               int16_t dx, int16_t dy, uint8_t dw, uint8_t dh,
                uint8_t flip_x, uint8_t flip_y);
+
+/* sget(x, y) -- reads a single pixel's colour index directly from the
+ * registered spritesheet (not the screen/framebuffer -- pico_pget(),
+ * pico_video.h, is the framebuffer equivalent). Added for M4's picodiver
+ * port, which uses this for pixel-perfect collision (dw817's method, the
+ * same one the original Pico-8 cart and PicoJS's own port both use) --
+ * out-of-range coordinates return 0, matching PicoJS's own picoJS.sget. */
+uint8_t pico_sget(uint8_t x, uint8_t y);
 
 #endif

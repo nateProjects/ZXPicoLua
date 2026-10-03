@@ -39,8 +39,14 @@ void pico_fset_all(uint8_t n, uint8_t flags);
  * same reason as pico_fget()/pico_fget_all() above (0 is a legitimate
  * real layer mask, so it can't double as an optional argument's
  * not-supplied sentinel). Requires pico_spr_init() to have been called
- * too, since each cell draws via pico_spr(). */
-void pico_map(uint8_t cel_x, uint8_t cel_y, uint8_t sx, uint8_t sy, uint8_t cel_w, uint8_t cel_h);
-void pico_map_layer(uint8_t cel_x, uint8_t cel_y, uint8_t sx, uint8_t sy, uint8_t cel_w, uint8_t cel_h, uint8_t layer_mask);
+ * too, since each cell draws via pico_spr().
+ *
+ * sx/sy (the SCREEN position, unlike cel_x/cel_y which are map-space) are
+ * signed, matching pico_spr()'s own x/y -- a scrolling background drawn
+ * via two map() calls (the normal position, plus a second a full screen-
+ * width to one side to cover the wrap) needs the second call to start
+ * off-screen on purpose. */
+void pico_map(uint8_t cel_x, uint8_t cel_y, int16_t sx, int16_t sy, uint8_t cel_w, uint8_t cel_h);
+void pico_map_layer(uint8_t cel_x, uint8_t cel_y, int16_t sx, int16_t sy, uint8_t cel_w, uint8_t cel_h, uint8_t layer_mask);
 
 #endif
