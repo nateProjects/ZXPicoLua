@@ -85,6 +85,71 @@ down only at the `pico_pset()` call site, which keeps the parameter
 remembering for every future full-screen-width loop in `pico_gfx.c`, not
 just this demo.
 
+## Logical canvas: a free coordinate offset, not a scaled blit
+
+Flagged before M1 started: ported Pico-8 content is natively 128x128, not
+256x192, and uses a fixed 16-colour palette. Addressed now rather than
+after M1's primitives were built assuming a single fixed 256x192 canvas,
+since retrofitting an offset into every primitive later would be far more
+work than building it in from the start.
+
+**Resolution**: `pico_video_init()` now takes a logical width/height and
+centres it within the fixed 256x192 physical surface -- e.g. 128x128 gets
+a 64px left/right, 32px top/bottom black border. Implemented as a static
+`origin_x`/`origin_y` pair added to every incoming logical coordinate
+before the existing page/address math (`lib/pico_video.c`); every current
+and future primitive routes through this unchanged, so this cost nothing
+structurally. Confirmed working: a 128x128 centred test pattern (colour
+bars, `games/demo/main.c`) rendered with the expected black letterbox
+border on all sides, screenshot-verified.
+
+**Scaling (filling more of the physical screen) is deliberately not
+implemented.** 2x would be 256x256, taller than the physical 192 rows;
+the next clean fit is 1.5x (192x192), but that requires drawing into an
+offscreen 128x128 buffer and blitting it scaled once per frame, not just
+an address offset -- a materially bigger feature (extra RAM for the
+offscreen buffer, a non-trivial scaling blit, and an unknown per-frame
+CPU cost on real Z80 timings) that no actual port has asked for yet.
+Deferred until a real game needs it rather than spent now.
+
+**Palette: map Pico-8's 16 colours onto Next-equivalent RGB in palette
+slots 0-15, leave 16-255 free for the Next's fuller palette.** The Next's
+palette registers support 9-bit (RGB333) colour via two writes to NextReg
+`$44` (`REG_PALETTE_VALUE_16`, confirmed in
+`config_zxn_nextreg.m4` -- misleadingly named for register width, not bit
+depth; the reference `layer2_set_palette()` in both next-resources layer2.c
+files already uses it this way), enough precision for a reasonable Pico-8
+colour match. Since Layer 2 is already a full 256-colour indexed surface,
+this needs no separate code path: seed indices 0-15 with the Pico-8-
+equivalent 9-bit RGB values at init, and a ported game's `pset(x,y,c)`
+with `c` in 0-15 just works, while a native ZXPicoLua game can use indices
+16-255 (or override 0-15) directly for the Next's full range. Not yet
+implemented -- belongs with M1/M3's `pal()`/`palt()` work, where the
+actual Pico-8-to-Next colour table gets built and loaded.
+
+## Follow-up: the "index 6/7 render black" mystery from the first spike is positional, not palette-related
+
+The 128x128 centred test reused the same colour values (0-7) as the
+original 256-wide test, just at different *physical* screen columns
+(bars now sit at physical x 64-191, not 0-255). Colour index 7, which
+rendered solid black in the original 256-wide test (physical x 224-255),
+renders as the expected bright blue here (physical x 176-191) --
+**same index, different physical position, different visible result**,
+which rules out a palette-table explanation (that would reproduce
+regardless of screen position) and points instead at something tied to
+specific physical columns near the right edge of the 256-wide test
+(possibly a border/edge rendering quirk, unconfirmed). Consistent with
+the original memory-read evidence, which already showed the underlying
+framebuffer bytes were correct everywhere. Still not chased further --
+doesn't affect the logical-canvas design above, and real ZXPicoLua/ported
+content won't usually paint all the way to the physical edge columns
+anyway.
+
+The handful of stray single-pixel screenshot artifacts (see below) also
+reappeared in this test, at the same relative row spacing, confirming
+they're independent of what's actually drawn -- further support for the
+"ZEsarUX-side overlay, not a data bug" read.
+
 ## Open, not chased further: a handful of stray single-pixel colours in screenshots, and the default palette
 
 A `save-screen`/ZRCP screenshot of the demo shows ~10 single-pixel spots
