@@ -49,4 +49,31 @@ void pico_fset_all(uint8_t n, uint8_t flags);
 void pico_map(uint8_t cel_x, uint8_t cel_y, int16_t sx, int16_t sy, uint8_t cel_w, uint8_t cel_h);
 void pico_map_layer(uint8_t cel_x, uint8_t cel_y, int16_t sx, int16_t sy, uint8_t cel_w, uint8_t cel_h, uint8_t layer_mask);
 
+#ifndef PICO_NO_MAP_FLAGS
+/* Precomputes a per-cell collision byte for a cel_w x cel_h map region
+ * (typically once, on room/level load), instead of re-deriving it from
+ * pico_mget()+pico_fget_all() on every collision query -- the same
+ * technique a real shipped Pico-8-to-Next port (Celeste Classic) used for
+ * its own tile_flag_at()-style check: identical collision-loop shape to
+ * Pico-8's own fget()-based query (mget the tile, mask its flags), just a
+ * cheap array index at query time afterward instead of a map+flag lookup
+ * every single call. out_mask must be at least cel_w*cel_h bytes,
+ * row-major (dy*cel_w+dx) -- the layout pico_colbox_at() below expects.
+ * Each cell's stored byte is pico_fget_all(tile) & flag_mask -- pass 0xFF
+ * to capture every flag bit, or a narrower mask (e.g. just a "solid" bit)
+ * if that's all a game's collision actually needs. */
+void pico_map_build_colmask(uint8_t *out_mask, uint8_t cel_x, uint8_t cel_y,
+                             uint8_t cel_w, uint8_t cel_h, uint8_t flag_mask);
+
+/* Queries a mask built by pico_map_build_colmask() against a pixel-space
+ * box (px,py)-(px+pw-1,py+ph-1), tile-aligned internally (8px cells, same
+ * convention as pico_spr()/pico_map()) -- returns the OR of every covered
+ * cell's mask byte (0 if the box doesn't touch any flagged cell, or lies
+ * entirely outside the mask's own cel_w x cel_h region). mask_w/mask_h
+ * must match the cel_w/cel_h originally passed to
+ * pico_map_build_colmask(). */
+uint8_t pico_colbox_at(const uint8_t *mask, uint8_t mask_w, uint8_t mask_h,
+                        int16_t px, int16_t py, uint8_t pw, uint8_t ph);
+#endif
+
 #endif

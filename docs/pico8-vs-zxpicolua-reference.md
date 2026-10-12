@@ -133,6 +133,7 @@ pico_spr(cab_img, cab_x, cab_y, 1, 1, cab_dr, 0);
 | `mget(x,y)` / `mset(x,y,v)` | `pico_mget(x,y)` / `pico_mset(x,y,v)` | out-of-range reads/writes are no-ops, like Pico-8 |
 | `map(cx,cy,sx,sy,cw,ch,[layer])` | `pico_map(...)` / `pico_map_layer(...,layer_mask)` | software blit, one `pico_spr()` per cell, every frame |
 | -- | `pico_tilemap_from_map(...)` + `pico_tilemap_init()` | **not a Lua function at all** -- a hardware tilemap background with zero per-frame redraw cost, for a static map too big/expensive to `map()` every frame (picodiver's ocean background; Harvester's whole world). Converts the same sheet/map data `pico_map()` would use, once, into tile patterns. |
+| -- | `pico_map_build_colmask(...)` + `pico_colbox_at(...)` | **not a Lua function at all** -- precomputes a per-cell collision byte for a map region once (room/level load), instead of calling `pico_mget()`+`pico_fget_all()` on every collision query. A ported cart's own `fget()`-based collision check (e.g. islander-4.p8-style `cmapf()`, or Celeste's `tile_flag_at()`) keeps the exact same query shape -- `pico_colbox_at()` is a drop-in replacement for the hot-path lookup, not a different algorithm. |
 
 The tilemap module exists because `map()`'s software redraw (one `spr()`
 call per visible cell, every single frame) is fine for a small HUD strip
@@ -140,6 +141,10 @@ but not for a full-screen scrolling world -- see `lib/pico_tilemap.h` and
 `docs/tilemap-viewport-notes.md`. There is deliberately no 1:1 Lua
 equivalent to port from; this is a case where the native platform offers
 something better than the thing being ported, not just a renamed function.
+The collision-mask helper is the same idea applied to `fget()`-based
+collision: confirmed as a real, shipped technique by a reference port
+(Celeste Classic's own Next port precomputes an identical per-room mask),
+not invented speculatively here.
 
 ## Hardware sprites (no Pico-8 equivalent)
 

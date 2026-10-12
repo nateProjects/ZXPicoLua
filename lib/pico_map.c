@@ -96,4 +96,45 @@ void pico_map(uint8_t cel_x, uint8_t cel_y, int16_t sx, int16_t sy, uint8_t cel_
 void pico_map_layer(uint8_t cel_x, uint8_t cel_y, int16_t sx, int16_t sy, uint8_t cel_w, uint8_t cel_h, uint8_t layer_mask) {
     map_draw(cel_x, cel_y, sx, sy, cel_w, cel_h, 1, layer_mask);
 }
+
+void pico_map_build_colmask(uint8_t *out_mask, uint8_t cel_x, uint8_t cel_y,
+                             uint8_t cel_w, uint8_t cel_h, uint8_t flag_mask) {
+    uint8_t dx, dy, tile;
+
+    if (cel_w == 0 || cel_h == 0) return;
+
+    dy = 0;
+    for (;;) {
+        dx = 0;
+        for (;;) {
+            tile = pico_mget((uint8_t)(cel_x + dx), (uint8_t)(cel_y + dy));
+            out_mask[(uint16_t)dy * cel_w + dx] = (uint8_t)(pico_fget_all(tile) & flag_mask);
+            if (dx == cel_w - 1) break;
+            dx++;
+        }
+        if (dy == cel_h - 1) break;
+        dy++;
+    }
+}
+
+uint8_t pico_colbox_at(const uint8_t *mask, uint8_t mask_w, uint8_t mask_h,
+                        int16_t px, int16_t py, uint8_t pw, uint8_t ph) {
+    int16_t x0 = px >> 3;
+    int16_t y0 = py >> 3;
+    int16_t x1 = (int16_t)(px + pw - 1) >> 3;
+    int16_t y1 = (int16_t)(py + ph - 1) >> 3;
+    int16_t x, y;
+    uint8_t result = 0;
+
+    if (x1 < 0 || y1 < 0 || x0 >= (int16_t)mask_w || y0 >= (int16_t)mask_h) return 0;
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 >= (int16_t)mask_w) x1 = (int16_t)mask_w - 1;
+    if (y1 >= (int16_t)mask_h) y1 = (int16_t)mask_h - 1;
+
+    for (y = y0; y <= y1; y++)
+        for (x = x0; x <= x1; x++)
+            result |= mask[(uint16_t)y * mask_w + x];
+    return result;
+}
 #endif

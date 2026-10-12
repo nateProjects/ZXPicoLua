@@ -8,6 +8,14 @@ call site).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-12
+
+### Added
+- `pico_map_build_colmask()`/`pico_colbox_at()` (`pico_map.h`) — a
+  precomputed per-room collision-mask helper, for a cheap array-index
+  collision query instead of `pico_mget()`+`pico_fget_all()` on every
+  call. Guarded by `PICO_NO_MAP_FLAGS` like the rest of the flags API.
+
 ## [0.1.0] - 2026-10-12
 
 First versioned snapshot. Core API complete: Layer 2 framebuffer access,
