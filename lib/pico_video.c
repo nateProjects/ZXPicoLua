@@ -4,7 +4,7 @@
  * zxnext_level9-master/src/layer2.c and brahman-master-zxnext_magnetic's
  * layer2.c), adapted here from their 320x256 (10 pages) to this project's
  * classic 256x192 mode (6 pages = 256*192 bytes / 8192). See
- * docs/layer2-notes.md for the M0 spike that confirmed this against the
+ * docs/layer2-notes.md for the spike that confirmed this against the
  * actual target resolution.
  *
  * zxn.h declares ZXN_WRITE_MMU2()/ZXN_READ_MMU2() helpers, but those
@@ -26,7 +26,7 @@
  * note below, and docs/layer2-notes.md's "stray pixels" postmortem for
  * the full investigation (confirmed, by reading the actual framebuffer
  * bytes at the affected coordinates, that a handful of stray, intermittent
- * single-pixel anomalies in M0/M1 screenshots were genuine data
+ * single-pixel anomalies in early screenshots were genuine data
  * corruption, not a ZEsarUX rendering artifact as first guessed).
  *
  * CRITICAL: every access through this window disables interrupts for its
@@ -77,7 +77,7 @@ static uint8_t pal_table[16];
  * display's own scanout is simultaneously reading. pico_flip() swaps the
  * two registers' values, presenting everything just drawn and handing
  * back a fresh (but two-flips-stale) buffer to draw into next. Added
- * after real human testing (see docs/input-notes.md's "double buffering"
+ * after interactive testing (see docs/input-notes.md's "double buffering"
  * section) showed a moving sprite visibly tearing even at 14MHz -- raw
  * speed only narrows the window a redraw can be caught mid-flight in,
  * double buffering is what actually closes it, the same way every real
@@ -124,24 +124,24 @@ void pico_video_init(uint16_t logical_w, uint16_t logical_h) {
      * next-resources/code/operation-jeff-main/src/screen.c and
      * zxnext_level9-master/src/main.c, which each write 0x10 for that
      * mode. Left at its cold-boot default (0 = classic 256x192 8bpp)
-     * here; confirmed via M0 spike (docs/layer2-notes.md) that default
-     * holds under --tbblue-fast-boot-mode too. */
+     * here; confirmed via an earlier spike (docs/layer2-notes.md) that
+     * default holds under --tbblue-fast-boot-mode too. */
 
     /* The Next boots at classic-compatible 3.5MHz and stays there unless
      * asked otherwise; every pico_pset() pays real per-pixel overhead
      * (DI/EI plus NextReg port accesses for the MMU page switch) that
      * made this matter in practice -- first as visible tearing at the
-     * default speed (M2.5 human testing, docs/input-notes.md), then as
-     * multi-second single-frame draws once M4's picodiver port exercised
-     * map()/spr() at real scale (docs/picodiver-notes.md).
+     * default speed (confirmed interactively, docs/input-notes.md), then
+     * as multi-second single-frame draws once the picodiver port
+     * exercised map()/spr() at real scale (docs/picodiver-notes.md).
      *
      * Tried 28MHz (raw register value 3 -- this z88dk checkout's zxn.h
-     * doesn't name a constant past RTM_14MHZ) at the user's suggestion,
-     * with and without also disabling memory contention
+     * doesn't name a constant past RTM_14MHZ), with and without also
+     * disabling memory contention
      * (REG_PERIPHERAL_3/RP3_DISABLE_CONTENTION). Both variants broke
      * keyboard input -- a key held via ZRCP's deterministic
      * set-ui-io-ports (the same method that reliably worked throughout
-     * M2.5) no longer registered, even held for several seconds, while
+     * the earlier input testing) no longer registered, even held for several seconds, while
      * the exact same test against a 14MHz build transitioned correctly.
      * Narrowed to the speed change itself, not contention (both with and
      * without RP3_DISABLE_CONTENTION failed identically) -- root cause
@@ -151,7 +151,7 @@ void pico_video_init(uint16_t logical_w, uint16_t logical_h) {
      * isn't yet explained). Reverted to the proven-reliable 14MHz rather
      * than ship something with broken input -- see docs/picodiver-notes.md
      * for the full writeup; worth revisiting if more speed is needed. */
-    ZXN_WRITE_REG(REG_TURBO_MODE, 0x03); /* 28MHz -- see comment above; re-confirmed keyboard input still works via ZRCP's set-ui-io-ports for mode transitions (X/O), though this session's own movement-key (LEFT/RIGHT/UP/DOWN) testing via the same tool proved unreliable at BOTH 14MHz and 28MHz, undermining confidence that the earlier 28MHz revert was really about clock speed rather than a ZRCP testing-tool limitation -- see docs/picodiver-notes.md. */
+    ZXN_WRITE_REG(REG_TURBO_MODE, 0x03); /* 28MHz -- see comment above; re-confirmed keyboard input still works via ZRCP's set-ui-io-ports for mode transitions (X/O), though later movement-key (LEFT/RIGHT/UP/DOWN) testing via the same tool proved unreliable at BOTH 14MHz and 28MHz, undermining confidence that the earlier 28MHz revert was really about clock speed rather than a ZRCP testing-tool limitation -- see docs/picodiver-notes.md. */
 
     pico_screen_w = logical_w;
     pico_screen_h = logical_h;
@@ -163,7 +163,7 @@ void pico_video_init(uint16_t logical_w, uint16_t logical_h) {
      * buffer, LAYER2_PAGES/2 16K banks) past whatever the main bank
      * already is -- not relying on any default for it (unlike the main
      * bank, left at its own cold-boot default, confirmed safe to do in
-     * the M0 spike). zxnext_level9-master/src/main.c is the proven
+     * an earlier spike). zxnext_level9-master/src/main.c is the proven
      * precedent for this exact pattern: it explicitly sets both
      * layer2_set_main_screen_bank()/layer2_set_shadow_screen_bank()
      * rather than trusting defaults for either. We only follow that for
@@ -307,14 +307,14 @@ void pico_pset(uint8_t x, uint8_t y, uint8_t color) {
 
 /* --- batch-write session ---------------------------------------------
  *
- * Added for M4: profiling picodiver's real map()/spr()-heavy scenes
+ * Added for the picodiver port: profiling its real map()/spr()-heavy scenes
  * found pico_pset()'s per-pixel cost (DI/EI, a layer2_base_page() port
  * read, and an MMU page-select port write, ALL repeated for every single
  * pixel) was the dominant cost once pico_sspr()'s needless scaling
  * divide was already removed -- a 16x12-tile map() draw still took
  * multiple seconds. An 8x8 sprite/tile's destination pixels usually fall
  * in the SAME physical page (pages are 32 rows tall) -- re-selecting it
- * 64 times for one tile is pure waste. This session API resolves the
+ * 64 times for one tile is pure waste. This batch-write API resolves the
  * base page and disables interrupts ONCE for a whole batch of pixels
  * (pico_sprite.c's pico_sspr() is the first user), only re-writing the
  * MMU register when the page actually changes between pixels, which for

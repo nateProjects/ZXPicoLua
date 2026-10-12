@@ -3,7 +3,7 @@
 #include "pico_palette.h"
 
 /* Two DIFFERENT 0-63 vs 0-127 ranges were conflated under one mask name
- * until Islander's M4 crafting menu put sprites past slot 63 on screen
+ * until Islander's crafting menu put sprites past slot 63 on screen
  * and found they silently wrapped onto (and corrupted) low-numbered
  * slots still in active use (player/foragry/drops) -- "partial resource
  * sprites" flickering on adjacent islands, initially (and only partly
@@ -24,7 +24,7 @@
 #define MSB(v) ((uint8_t)(((v) >> 8) & 0x01))
 
 /* Transparency index for sprite patterns -- any pattern byte equal to
- * this is see-through. 0xE3, not 0xFF: Islander's own M1 testing found
+ * this is see-through. 0xE3, not 0xFF: Islander's own early testing found
  * 0xFF rendering as a visible opaque colour (a black box around the
  * player sprite, its 4px-per-side padding never actually transparent)
  * despite matching REG_SPRITE_TRANSPARENCY_INDEX exactly -- confirmed via
@@ -54,13 +54,13 @@ void pico_hwsprite_init(void) {
      * sprite-space pixels in from sprite coordinate (0,0) (zxnext_notes.pdf,
      * Register $19 section: "sprite position is always in sprite
      * coordinates with 32,32 corresponding to the top left corner of the
-     * ULA screen" -- confirmed in docs/hwsprite-notes.md's own M0 spike).
+     * ULA screen" -- confirmed in docs/hwsprite-notes.md's own spike).
      * A clip window of [0,255] in THAT space only covers sprite-space
      * 32-287 -- any sprite at a raw sprite-X or sprite-Y below 32 (e.g. a
      * player near the world's own left/top edge, using this project's
      * full-0-319-sprite-space viewport, not a narrower ULA-matching one)
      * gets silently clipped -- invisible, NOT mispositioned, which read
-     * as "the character disappears" during Islander's own M1 testing,
+     * as "the character disappears" during Islander's own early testing,
      * not a collision bug (confirmed by reading back the sprite's actual
      * stored attributes via ZRCP -- correctly positioned and visible=1,
      * just clipped). Over-border mode moves the clip window's own origin
@@ -76,7 +76,7 @@ void pico_hwsprite_init(void) {
 
     /* Full-range sprite clip window (not the cold-boot default, which
      * dark-room-next's docs/sprite-notes.md never needed resetting but
-     * this project's own M0 spike reset defensively and kept -- cheap
+     * this project's own earlier spike reset defensively and kept -- cheap
      * insurance against a stale index from the tilemap's own clip-window
      * use, if any future code starts using that). */
     ZXN_WRITE_REG(REG_CLIP_WINDOW_CONTROL, RCWC_RESET_SPRITE_CLIP_INDEX);
@@ -90,7 +90,7 @@ void pico_hwsprite_init(void) {
      * RGB332 values (via pico8_to_rgb332() above), so this makes the
      * sprite's own palette indirection a pure passthrough -- same
      * approach next-resources/zxnext_level9's sprite_set_default_palette()
-     * uses, confirmed necessary by direct M0 measurement (docs/
+     * uses, confirmed necessary by direct measurement (docs/
      * hwsprite-notes.md), not assumed from "no palette needed" claims
      * that turned out not to be the actual blocker there. */
     {
@@ -195,8 +195,8 @@ static void hwsprite_set_impl(uint8_t slot, uint8_t pattern, int16_t x, int16_t 
      * it HERE, once, means x/y means what every caller actually wants (the
      * visible content's own top-left, same convention as the tilemap's
      * col*8/row*8 and pico_spr()'s own x/y) rather than a footgun every
-     * call site has to remember. Found the hard way in Islander's own M1:
-     * the player's collision box was built against the logical
+     * call site has to remember. Found the hard way in Islander's own
+     * early world/movement work: the player's collision box was built against the logical
      * (uncorrected) position, so it sat 4px up-left of the sprite you
      * could actually see -- able to visually overlap obstacles when
      * moving down/right (collision trailed behind the graphic) and

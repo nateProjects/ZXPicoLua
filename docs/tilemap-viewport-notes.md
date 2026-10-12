@@ -1,8 +1,8 @@
-# M0 spike findings -- tilemap backing-store size & scrolling
+# Tilemap backing-store size & scrolling -- spike findings
 
-Second open question from the Islander-as-Next-game plan (`/Users/nat/.claude/
-plans/polished-churning-meerkat.md`): can the tilemap's backing store be
-larger than the visible 40×32 cell grid (hardware-scrolled across a bigger
+Second open question from porting Islander as a native Next game: can the
+tilemap's backing store be larger than the visible 40×32 cell grid
+(hardware-scrolled across a bigger
 virtual map), or is it strictly 40×32, requiring the game to stream new tile
 data into the fixed grid as the camera moves? Settled directly from
 `next-resources/docs/zxnext_notes.pdf`'s own register spec -- unambiguous
@@ -29,12 +29,12 @@ any pixel offset within the fixed grid, smoothly scrolling the *visible
 window* without moving tile data, but the underlying 40×32 cells of tile
 data stay exactly where they are.
 
-## Practical implication for Islander's M1 (confirmed, not newly discovered -- the plan already anticipated this as the likely answer)
+## Practical implication for Islander's world/camera work (confirmed, not newly discovered -- anticipated as the likely answer going in)
 
 Islander's world is 128×64 tiles, far bigger than one 40×32 screen's worth
 either way. **Camera-driven tile streaming is required**, regardless of the
-scroll-offset registers: as the player moves, M1 needs to write newly-
-exposed tile data into the row/column of the fixed 40×32 grid that's about
+scroll-offset registers: as the player moves, newly-exposed tile data
+needs writing into the row/column of the fixed 40×32 grid that's about
 to scroll into view (classic ring-buffer streaming, matching how most retro
 tile engines -- including real SNES hardware in modes without extra VRAM --
 actually work), while the $2F/$30/$31 offset registers handle smooth
@@ -42,11 +42,11 @@ actually work), while the $2F/$30/$31 offset registers handle smooth
 need to re-stream on every single pixel of movement -- only when crossing
 an 8px tile boundary.
 
-## M0 status: both open questions now settled
+## Status: both open questions now settled
 
 1. Sprite-X vs. tilemap-X coordinate space: 1:1, confirmed by measurement
    (`docs/hwsprite-notes.md`).
 2. Tilemap backing-store size: fixed at 40×32, confirmed by spec. Tile
-   streaming is needed for M1 regardless, as already planned.
+   streaming is needed regardless, as already planned.
 
-Next: M1 (world + camera streaming + player movement), per the plan.
+Next: world + camera streaming + player movement.

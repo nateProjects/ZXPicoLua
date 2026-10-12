@@ -1,12 +1,13 @@
-# M3 findings -- math/RNG, pal/palt, map, cartdata
+# Math/RNG, pal/palt, map, cartdata -- findings
 
 Scoped against real usage, not the full Pico-8 API blindly: grepped
 `PicoJS/games/picodiver/picodiver.js` (the only real ported-cart reference
-available) for every Pico-8 API call it actually makes. Beyond what M0-M2.5
-already built, it uses exactly three things: `flr`, `pal` (2-arg draw
-remap), `rnd` -- no `map`/`mget`/`mset`/`fget`/`fset`, no `palt`, no
-`min`/`max`/`mid`/`abs`, no bitwise ops, no `cartdata`/`dget`/`dset`. Built
-the full M3 scope from the approved plan anyway (all of it is cheap,
+available) for every Pico-8 API call it actually makes. Beyond the
+framebuffer/drawing/sprite/input work already built, it uses exactly three
+things: `flr`, `pal` (2-arg draw remap), `rnd` -- no
+`map`/`mget`/`mset`/`fget`/`fset`, no `palt`, no `min`/`max`/`mid`/`abs`,
+no bitwise ops, no `cartdata`/`dget`/`dset`. Built the full planned scope
+anyway (all of it is cheap,
 well-specified, and clearly useful for *future* ports even if this one
 reference cart doesn't exercise it), but this narrower real-usage signal
 is why `sin`/`cos`/`atan2` were cut from scope entirely -- see
@@ -54,11 +55,11 @@ Verified visually and by construction: a remapped rect (colour 8, with
 `pal_reset()`) rendered as two different colours in the demo screenshot,
 matching what each should look like based on this project's own earlier
 established colour observations (colour 8 = green, colour 11 = blue, both
-confirmed from M1/M2 demo screenshots).
+confirmed from earlier demo screenshots).
 
-## palt(): upgraded from M2's single-colour placeholder to a real per-colour bitmask
+## palt(): upgraded from an earlier single-colour placeholder to a real per-colour bitmask
 
-M2's `pico_spr_transparent(colour)` is gone, replaced by
+The earlier `pico_spr_transparent(colour)` is gone, replaced by
 `pico_palt(colour, transparent)` (`pico_sprite.h`) backed by a 16-bit
 mask (one bit per Pico-8 colour), matching real Pico-8's `palt()` --
 any number of colours can be transparent at once, not just one. Checked
@@ -128,8 +129,8 @@ persists across a full process restart, not just within one run's RAM.
 - No `tostr`/`tonum`/`chr`/`ord`/`sub` -- lower priority (no reference-game
   usage), and string handling raises its own embedded-C design questions
   (fixed vs. caller-provided buffers) better resolved against a real need
-  than guessed at. The self-test in this milestone verified every numeric
-  result by direct comparison instead of needing to format and display
+  than guessed at. The self-test here verified every numeric result by
+  direct comparison instead of needing to format and display
   them as text, which is exactly the kind of real need that would justify
   building `tostr()` next.
 - `pal()`'s screen-palette mode (`p=1` in real Pico-8, a whole-framebuffer

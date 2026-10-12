@@ -8,7 +8,7 @@ static uint16_t sheet_h = 0;
 /* One bit per Pico-8 colour (0-15) -- bit set means "transparent when
  * blitting sprites". Defaults to colour 0 only (bit 0 set), matching
  * Pico-8's own default palt() state; was a single uint8_t colour before
- * M3's pico_palt() replaced it with this proper per-colour bitmask. */
+ * pico_palt() replaced it with this proper per-colour bitmask. */
 static uint16_t transparent_mask = 0x0001;
 
 void pico_spr_init(const uint8_t *sheet_data, uint16_t w, uint16_t h) {
@@ -48,7 +48,7 @@ static void batch_pset_safe(int16_t x, int16_t y, uint8_t color) {
  * sprite AND every map() tile) hits this, since pico_spr() always calls
  * through with sw==dw/sh==dh by construction. Walks raw src/dst pointers a
  * row at a time instead of calling sheet_pixel()/batch_pset_safe() per
- * pixel -- profiling a real scene (M4's picodiver) found THAT per-pixel
+ * pixel -- profiling a real scene (the picodiver port) found THAT per-pixel
  * call overhead, not the MMU page logic itself, was still the dominant
  * cost even after the scaling-divide and page-batching fixes below: the
  * generated .asm for a two-call-per-pixel loop re-spills every local

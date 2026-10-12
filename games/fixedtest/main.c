@@ -1,13 +1,12 @@
 /* Standalone test for lib/pico_math's new Q16.16 fixed-point functions
  * (pico_fix_mul/pico_fix_lerp), added for the Islander port's movement
- * physics -- see /Users/nat/.claude/plans/polished-churning-meerkat.md,
- * M1. Tested here in isolation, not inside Islander's own loop, per the
- * plan's own testing discipline. Self-checking: each case compares
+ * physics. Tested here in isolation, not inside Islander's own loop, per
+ * this project's own testing discipline. Self-checking: each case compares
  * against a hand-computed expected value with a small tolerance (integer
  * division in PICO_FIX_FRAC means exact equality isn't always possible)
  * and prints PASS/FAIL, verified via one ZRCP screenshot -- no simulated
- * input needed, so none of today's session's input-automation pitfalls
- * apply here. */
+ * input needed, so none of the usual input-automation pitfalls apply
+ * here. */
 
 #include <intrinsic.h>
 #include <stdint.h>

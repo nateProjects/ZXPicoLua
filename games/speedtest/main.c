@@ -1,7 +1,7 @@
 /* speedtest -- incremental, from-scratch performance staging ground.
  *
- * Built at the user's explicit request after several rounds of
- * optimizing/debugging the full picodiver game in place kept hitting
+ * Built after several rounds of optimizing/debugging the full picodiver
+ * game in place kept hitting
  * mysterious, reproducible crashes when adding seemingly-safe
  * "redraw on change" logic -- rather than keep guessing inside that
  * large, fragile program (near-zero stack/BSS margin, deep call chains),
@@ -70,8 +70,8 @@ static void build_checkerboard(void) {
  * via a BSS counter (several previous rounds found those unreliable
  * near the top of RAM); this program is tiny so margin should be large
  * regardless, but t-states is the hardware-accurate, zero-assumption
- * method proven earlier in this project. Still exposed as a global so a
- * human (or screenshot) can sanity-check visually if needed. */
+ * method proven earlier in this project. Still exposed as a global for
+ * a visual/screenshot sanity-check if needed. */
 static uint16_t ticks;
 
 int main(void) {

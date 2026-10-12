@@ -18,8 +18,8 @@
  * editor canvas always allocates all 16 rows regardless of how many are
  * actually drawn with content; the bottom 8 rows here were genuinely
  * empty padding, not gameplay content, so dropping them is a real size
- * win (8KB), not a content cut -- see M4's docs/picodiver-notes.md for
- * why this was needed (the full 128x128 sheet pushed the resident binary
+ * win (8KB), not a content cut -- see docs/picodiver-notes.md for why
+ * this was needed (the full 128x128 sheet pushed the resident binary
  * past 64K). picodiver_sprite_flags (256 bytes, unused -- this game's own
  * logic branches on raw sprite-index ranges instead of fget()/fset(),
  * confirmed by reading picodiver.js itself) was dropped from the build

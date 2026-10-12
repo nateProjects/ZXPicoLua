@@ -1,6 +1,6 @@
-/* M0 spike for the Islander-as-Next-game plan (see /Users/nat/.claude/plans/
- * polished-churning-meerkat.md): throwaway, measure-don't-assume check of
- * two open questions before any real game code gets written --
+/* Spike for porting Islander as a native Next game: throwaway,
+ * measure-don't-assume check of two open questions before any real game
+ * code gets written --
  *
  * 1. Is hardware-sprite X 1:1 with this project's 40-column tilemap-pixel
  *    X, or scaled (dark-room-next measured a 2:1 scale against ITS OWN

@@ -73,7 +73,7 @@ GAME_CFLAGS := -DPICO_NO_MAP_FLAGS
 # games/picodiver/main.c (confirmed by grep) -- picodiver's own objects
 # are all software Layer-2 blits via pico_sprite.c, never Next hardware
 # sprites. Harmless dead weight when this file was small; grew a lot
-# during Islander's own M4+ work (16x16 pattern support, magnification,
+# during Islander's own later work (16x16 pattern support, magnification,
 # etc.) and tipped picodiver's resident build over the 64K ceiling --
 # confirmed by reproducing the SAME overflow with this file still
 # in and an unrelated new source (pico_mul_z80n.asm) pulled back out,
@@ -107,7 +107,7 @@ ZESARUX := /Applications/ZEsarUX.app/Contents/MacOS/zesarux
 
 all: $(TARGET).nex
 
-# -lesxdos: M3's pico_data.c (dget/dset/cartdata) needs the low-level
+# -lesxdos: pico_data.c (dget/dset/cartdata) needs the low-level
 # esxdos_f_* calls -- same reasoning as dark-room-next's save.c, see
 # pico_data.c's own header comment.
 $(TARGET).nex: $(SRCS) $(HEADERS) $(BANKED_ASMS) | $(BUILD_DIR)
@@ -122,7 +122,7 @@ $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
 # --nex-no-automount-esxdos + --esxdos-root-dir: needed for any game that
-# touches the SD card (M3's pico_data.c) -- see dark-room-next's own
+# touches the SD card (pico_data.c) -- see dark-room-next's own
 # Makefile/docs/layer2-notes.md for why both flags are required together
 # (ZEsarUX silently auto-mounts the .nex's own directory otherwise, which
 # --esxdos-root-dir alone doesn't override).

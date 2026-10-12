@@ -2,29 +2,29 @@
  * original one-shot port (see docs/reference/main_v1_reference.c.txt)
  * accumulated enough complexity and stack-margin fragility that small,
  * individually-validated changes kept causing unexplained regressions
- * late in its life (docs/picodiver-notes.md "Round 4/5"). Per the user's
- * explicit direction: start with just the player and movement (known
- * fast, proven by games/demo's ball), then add the background, then one
- * enemy, then collision -- testing speed and correctness after each
- * stage, not building it all at once.
+ * late in its life (docs/picodiver-notes.md "Round 4/5"). Rebuilt with an
+ * explicit staging discipline instead: start with just the player and
+ * movement (known fast, proven by games/demo's ball), then add the
+ * background, then one enemy, then collision -- testing speed and
+ * correctness after each stage, not building it all at once.
  *
  * STAGE 1 (done, confirmed smooth): player (the cabin diver) + movement
  * only -- real sprite assets, real movement feel, native 50Hz, 2px/tick.
  *
- * STAGE 2, attempt 1 (software pico_map(), redrawn every frame): user-
- * confirmed "unbearably slow" -- matches this whole session's repeated
- * finding that software-blitting a full tile grid through Layer 2 every
- * frame is expensive regardless of CPU clock (docs/picodiver-notes.md).
+ * STAGE 2, attempt 1 (software pico_map(), redrawn every frame):
+ * confirmed "unbearably slow" -- matches this project's repeated finding
+ * that software-blitting a full tile grid through Layer 2 every frame is
+ * expensive regardless of CPU clock (docs/picodiver-notes.md).
  *
  * STAGE 2 (done, confirmed smooth): the ocean background via the Next's
  * HARDWARE tilemap (lib/pico_tilemap.c) instead of pico_map() -- an
- * earlier software-blit attempt was user-confirmed "unbearably slow"
- * (matching this whole session's repeated finding that redrawing a full
+ * earlier software-blit attempt was confirmed "unbearably slow"
+ * (matching this project's repeated finding that redrawing a full
  * tile grid through Layer 2 every frame is expensive regardless of CPU
  * clock, docs/picodiver-notes.md); the hardware tilemap composites for
  * free during scanout instead, with Layer 2 (the player sprite) sitting
  * on top via the global-transparency-colour mechanism. "What a real Next
- * game would do" for a static background, per the user's own framing --
+ * game would do" for a static background --
  * not a Pico-8-faithful primitive, a deliberate departure from it where
  * the software-faithful approach measurably couldn't keep up. Two real
  * bugs found and fixed via direct measurement, not guessing: the
@@ -141,8 +141,8 @@
  * 50Hz as earlier stages assumed from indirect (screenshot/feel-based)
  * timing -- a real correction, not just a Stage 6 regression -- and the
  * full creature/octopus/icon-HUD system roughly halved that again,
- * matching the user's own hands-on comparison against the real Pico-8
- * cart ("half the speed"). Two targeted fixes (removing redundant
+ * matching a hands-on comparison against the real Pico-8 cart ("half
+ * the speed"). Two targeted fixes (removing redundant
  * per-row MMU page writes in pico_cls_rect(), and nestable DI/EI batch
  * sessions, lib/pico_video.c) measured ZERO improvement when tested in
  * isolation -- ruled out, not guessed around. The real, confirmed cost
@@ -306,7 +306,7 @@
  * runs its tick loop at the Next's native 50Hz (see intrinsic_halt()
  * below), not Pico-8's own ~30fps, so a straight port of "move 1px/tick"
  * would already end up somewhat faster just from the tick rate alone --
- * but not as fast as the user confirmed felt right (docs/picodiver-notes.md:
+ * but not as fast as felt right on real play (docs/picodiver-notes.md:
  * "needs to move at about twice the speed" at the halved-25Hz baseline,
  * then re-confirmed again at native 50Hz as "the baseline speed"). Rather
  * than silently bake that into each object's own movement literal (which
@@ -320,7 +320,7 @@
 /* 4, not the original 2 -- Stage 10 doubled the canvas width (128->256),
  * and this constant was never revisited for that. Two separate, both
  * real, effects compound here: (1) the player felt half as fast as
- * intended (confirmed by the user's own play) because the same
+ * intended (confirmed by real play) because the same
  * 1px/tick*2 delta now crosses a canvas twice as wide, taking twice as
  * many ticks edge-to-edge; (2) creatures/the octopus, moving at that
  * same now-too-slow pace, stay "in flight" for twice as many ticks
@@ -584,8 +584,8 @@ static void oct_show(void) {
      * left a visible trail specifically on the tentacle while the head
      * stayed clean, confirmed via real play (not this project's own
      * automated ZRCP testing, which couldn't reproduce it reliably --
-     * real hardware/human testing remains the authority here, same as
-     * every other "feel"/visual-correctness check throughout this
+     * real hardware/interactive testing remains the authority here, same
+     * as every other "feel"/visual-correctness check throughout this
      * project). Splitting them is a real behavioural change, not just a
      * bookkeeping one: each sprite's own erase now runs independently. */
     track_rect(&prev_oct_head[buf_idx], oct_x, 32, 8, 8);

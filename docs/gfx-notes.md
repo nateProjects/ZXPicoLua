@@ -1,12 +1,12 @@
-# M1 findings -- shape and text primitives
+# Shape and text primitives -- findings
 
 `lib/pico_gfx.c` (rect/rectfill, line, circ/circfill, oval/ovalfill, fillp,
-print/cursor) built entirely on `pico_pset()` from the M0 spike -- no new
-hardware access. Verified with a single combined demo scene
+print/cursor) built entirely on `pico_pset()` from the Layer 2 framebuffer
+spike -- no new hardware access. Verified with a single combined demo scene
 (`games/demo/main.c`) exercising every primitive together, screenshotted and
-pixel-inspected via the same ZRCP flow as M0.
+pixel-inspected via the same ZRCP flow as that spike.
 
-## Bounds-checking added beyond the original M0 primitives
+## Bounds-checking added beyond the original framebuffer primitives
 
 `pico_pset()`/`pico_pget()` stay unchecked by design (cheap hot path). But
 every composite shape here derives coordinates via subtraction -- a
@@ -17,9 +17,9 @@ value straight to `uint8_t` would wrap (`-8` -> `248`) and corrupt the
 framebuffer at a wildly wrong position instead of clipping, the way
 Pico-8/PicoJS's own renderer does. Addressed with `pset_safe()` and a
 clipped `fill_run()` (both take signed `int16_t`), which every primitive
-routes all actual pixel writes through. Not in the original M0 design --
-added once building real shapes made the risk concrete, same as the
-M0 spike's own `uint8_t`-loop-bound finding.
+routes all actual pixel writes through. Not in the original framebuffer
+design -- added once building real shapes made the risk concrete, same as
+that earlier spike's own `uint8_t`-loop-bound finding.
 
 ## Oval: hand-derived integer midpoint ellipse algorithm, not a port of PicoJS's float version
 
@@ -32,11 +32,11 @@ variables (`rx`/`ry` up to ~128, `rx*ry` products comfortably fit) and no
 floating point or sqrt at all. This is **not** a port of existing
 PicoJS/Pico-8 source -- a from-scratch implementation against the
 well-known algorithm, so it got the most scrutiny: rendered and visually
-inspected at 3-4x zoom (`/tmp/zxpicolua_m1_oval.png`-equivalent during
-development) for symmetry and smoothness at the region1/region2
-transition. Came out clean on the first attempt -- round, symmetric, no
-gaps or doubled pixels -- but this is the one piece of M1 without a
-second independent source to cross-check against (unlike line/circle,
+inspected at 3-4x zoom during development for symmetry and smoothness at
+the region1/region2 transition. Came out clean on the first attempt --
+round, symmetric, no gaps or doubled pixels -- but this is the one
+primitive here without a second independent source to cross-check against
+(unlike line/circle,
 which are direct, proven ports of PicoJS's own Bresenham implementations),
 so worth a second look (an extreme aspect ratio, e.g. `rx` >> `ry`, or
 very small radii) if an oval bug ever surfaces in real use.
@@ -67,12 +67,13 @@ two correctly-positioned lines).
 ## RESOLVED: the stray single-pixel artifacts were real corruption, not a display quirk
 
 The same handful of isolated, off-content single-pixel colour anomalies
-from the M0 Layer 2 spike (`docs/layer2-notes.md`) reappeared in this
-completely different scene (text/shapes instead of colour bars) -- e.g. a
-single stray dark-blue pixel sitting in empty black space near the line-X
-test, on neither line's path. At the time this was logged as "still reads
-as a ZEsarUX-side rendering artifact... worth keeping in mind", following
-M0's own (as it turned out, premature) conclusion. **That conclusion was
+from the earlier Layer 2 framebuffer spike (`docs/layer2-notes.md`)
+reappeared in this completely different scene (text/shapes instead of
+colour bars) -- e.g. a single stray dark-blue pixel sitting in empty black
+space near the line-X test, on neither line's path. At the time this was
+logged as "still reads as a ZEsarUX-side rendering artifact... worth
+keeping in mind", following that earlier (as it turned out, premature)
+conclusion. **That conclusion was
 wrong.** Chased down properly afterward: the framebuffer bytes at these
 exact coordinates genuinely held stray data our code never wrote. Root
 cause was the classic ROM's 50Hz interrupt handler writing into a fixed
@@ -101,9 +102,8 @@ double-check that explanation, not a reason to stop looking.
   argument instead of Pico-8's fractional-pattern convention
   (`fillp(pattern + 0x0.8)`), which relies on a real Lua float literal
   trick with no clean C equivalent.
-- `camera()` is **not** implemented in M1 (unlike the original plan
-  sketch's `pico_gfx.{c,h}` file listing, which included it) -- not in
-  the approved M1 scope, and introducing it means revisiting every
+- `camera()` was **not** implemented alongside the rest of these
+  primitives originally -- introducing it meant revisiting every
   primitive's clipping for the much-more-common negative-coordinate case
-  a scrolling camera implies. Deferred to a later milestone alongside
-  `pal()`/`palt()`.
+  a scrolling camera implies, deferred at the time until a real port
+  needed it (it's since been added -- see `pico_gfx.h`).

@@ -1,4 +1,4 @@
-# M2 findings -- sprites (spr/sspr)
+# Sprites (spr/sspr) -- findings
 
 `lib/pico_sprite.c` (`pico_spr_init`, `pico_spr_transparent`, `pico_spr`,
 `pico_sspr`) built entirely on `pico_pset()` -- no new hardware access,
@@ -58,13 +58,13 @@ the same clip-not-wrap discipline applies here too. Worth promoting to a
 shared internal header if a third module ends up needing the same helper,
 not worth the indirection for two.
 
-## Regression-checked: the M0/M1 framebuffer-corruption fix holds
+## Regression-checked: the earlier framebuffer-corruption fix holds
 
 Re-ran the same full-48KB-memory-dump verification from the interrupt/MMU-
 window corruption fix (`docs/layer2-notes.md`'s "RESOLVED" section) against
-this milestone's demo scene, specifically because `pico_sspr()` adds a lot
-more `pico_pset()` call volume (every sprite pixel, including the ones
-skipped for transparency, which still read a byte) than M1's shapes did --
+this demo scene, specifically because `pico_sspr()` adds a lot more
+`pico_pset()` call volume (every sprite pixel, including the ones skipped
+for transparency, which still read a byte) than the shape primitives did --
 more opportunities for the same class of interrupt-timing bug to resurface
 if the DI/EI fix were ever accidentally scoped too narrowly. Zero stray
 bytes found in the physical letterbox border. Fix holds.
@@ -75,11 +75,10 @@ bytes found in the physical letterbox border. Fix holds.
   array. A real Pico-8-scale sheet (128x128 = 16KB) would likely need the
   same banking treatment `dark-room-next`'s `bank.c` gives its own large
   data, once a real port actually needs a sheet that size -- not built
-  speculatively (see the plan doc's note on `z88dk-banking-notes.md` being
-  parked for later).
+  speculatively.
 - No `palt()` -- one global transparent colour (`pico_spr_transparent()`,
   default 0) instead of Pico-8's per-colour transparency table. Deferred
-  to M3 alongside `pal()`, consistent with the original plan.
+  until the `pal()` work, consistent with the original plan.
 - `pico_spr()`'s `w`/`h` (whole-sprite-cell block size) are integer only,
   matching the overwhelming majority of real Pico-8 usage -- Pico-8 itself
   allows fractional `w`/`h` in rare cases, not supported here.

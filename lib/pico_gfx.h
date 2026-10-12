@@ -19,9 +19,9 @@
  * than silently resolved by hand at each translated call site, since the
  * genuinely hard case isn't a local 3-line block (trivial to trace by
  * eye) but a color() set in one function relied on by a print() in a
- * DIFFERENT one -- exactly the kind of cross-function implicit state a
- * human translator can silently get wrong, and a real stateful variable
- * in the port carries correctly for free. */
+ * DIFFERENT one -- exactly the kind of cross-function implicit state
+ * easy to silently get wrong when porting by hand, and a real stateful
+ * variable in the port carries correctly for free. */
 
 /* color(c) -- sets the "current" pen colour used by any pico_rect()/
  * pico_line()/pico_print()/pico_print_at_cursor() call that receives

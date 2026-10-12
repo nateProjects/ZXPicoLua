@@ -4,12 +4,11 @@
 #include <stdint.h>
 
 /* Next hardware sprites -- a separate compositing layer from Layer 2
- * (pico_sprite.c's software blits), added for the Islander port (see
- * /Users/nat/.claude/plans/polished-churning-meerkat.md): no per-sprite
- * erase/redraw bookkeeping needed (no DirtyRect, no buffer desync, no
- * tearing), unlike pico_sprite.c's own software blits -- a hardware
- * sprite is just "rewrite 4-5 attribute bytes, halt, repeat". Mechanism
- * proven in docs/hwsprite-notes.md's M0 spike (next-resources/code/
+ * (pico_sprite.c's software blits), added for the Islander port: no
+ * per-sprite erase/redraw bookkeeping needed (no DirtyRect, no buffer
+ * desync, no tearing), unlike pico_sprite.c's own software blits -- a
+ * hardware sprite is just "rewrite 4-5 attribute bytes, halt, repeat".
+ * Mechanism proven in docs/hwsprite-notes.md's spike (next-resources/code/
  * zxnext_level9-master/src/sprite.c's own pattern, confirmed working in
  * this project's own init sequence) -- most importantly, confirmed by
  * direct measurement that sprite coordinates are 1:1 with this project's
@@ -54,9 +53,8 @@ void pico_hwsprite_init(void);
  * RGB332 sprite palette against bright terrain, reads far more starkly
  * than it did against Pico-8's own smoother colour handling -- dropping
  * it here (not re-colouring it) is the simplest fix until a real
- * spr_outline() equivalent exists for hardware sprites (M6, see the
- * plan's own "needs redesign, not translation" note on this exact
- * trick). */
+ * spr_outline() equivalent exists for hardware sprites (needs a redesign,
+ * not a translation, of this exact trick). */
 void pico_hwsprite_set_pattern(uint8_t slot, const uint8_t *sheet, uint16_t sheet_w,
                                 uint16_t sheet_x, uint16_t sheet_y, uint8_t extra_transparent);
 

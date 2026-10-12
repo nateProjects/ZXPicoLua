@@ -1,4 +1,4 @@
-# M0 spike findings -- Layer 2 256x192 8bpp framebuffer
+# Layer 2 256x192 8bpp framebuffer -- findings
 
 De-risking pass for the whole ZXPicoLua project, the same role
 `dark-room-next/docs/tilemap-notes.md` and `sprite-notes.md` played there.
@@ -87,9 +87,10 @@ just this demo.
 
 ## Logical canvas: a free coordinate offset, not a scaled blit
 
-Flagged before M1 started: ported Pico-8 content is natively 128x128, not
-256x192, and uses a fixed 16-colour palette. Addressed now rather than
-after M1's primitives were built assuming a single fixed 256x192 canvas,
+Flagged before the drawing primitives were built: ported Pico-8 content is
+natively 128x128, not 256x192, and uses a fixed 16-colour palette.
+Addressed now rather than after those primitives were built assuming a
+single fixed 256x192 canvas,
 since retrofitting an offset into every primitive later would be far more
 work than building it in from the start.
 
@@ -124,7 +125,7 @@ this needs no separate code path: seed indices 0-15 with the Pico-8-
 equivalent 9-bit RGB values at init, and a ported game's `pset(x,y,c)`
 with `c` in 0-15 just works, while a native ZXPicoLua game can use indices
 16-255 (or override 0-15) directly for the Next's full range. Not yet
-implemented -- belongs with M1/M3's `pal()`/`palt()` work, where the
+implemented -- belongs with the later `pal()`/`palt()` work, where the
 actual Pico-8-to-Next colour table gets built and loaded.
 
 ## Follow-up: the "index 6/7 render black" mystery from the first spike is positional, not palette-related
@@ -150,13 +151,13 @@ reappeared in this test, at the same relative row spacing, confirming
 they're independent of what's actually drawn -- further support for the
 "ZEsarUX-side overlay, not a data bug" read.
 
-## RESOLVED (post-M1): the stray single-pixel screenshot colours were real data corruption, not a ZEsarUX overlay -- root cause was the classic ROM's interrupt handler, not our own code
+## RESOLVED (later): the stray single-pixel screenshot colours were real data corruption, not a ZEsarUX overlay -- root cause was the classic ROM's interrupt handler, not our own code
 
 The original read here concluded the stray pixels were a ZEsarUX rendering
 artifact, on the strength of one spot-check: a few specific rows read back
 clean via direct memory reads. **That spot-check didn't generalize, and
-the conclusion was wrong.** Revisited after the same dots reappeared in
-M1's completely different demo scene (see `gfx-notes.md`) -- a proper
+the conclusion was wrong.** Revisited after the same dots reappeared in a
+later, completely different demo scene (see `gfx-notes.md`) -- a proper
 pixel-by-pixel screenshot diff against each column's own majority colour,
 followed by reading the *exact* framebuffer bytes at the flagged
 coordinates, found genuine stray values (`0xEF`, `0xED`) sitting in
@@ -209,20 +210,20 @@ render visually near-black on screen in some earlier spot-checks despite
 their framebuffer bytes being correct -- reading `REG_PALETTE_VALUE_8`
 back after setting `REG_PALETTE_INDEX` just echoed the index instead of a
 colour, so the *default* Layer 2 palette's actual RGB332 contents weren't
-pinned down. Doesn't block M1/M2: the library will program its own
-palette explicitly once `pal()`/`palt()` land (M3), at which point default-
-palette quirks stop mattering -- but given the lesson just learned, this
-should get the same full-rigour re-check (not just dismissed) before M3
-actually ships `pal()`.
+pinned down. Doesn't block the drawing/sprite work still ahead: the
+library will program its own palette explicitly once `pal()`/`palt()`
+land, at which point default-palette quirks stop mattering -- but given
+the lesson just learned, this should get the same full-rigour re-check
+(not just dismissed) before `pal()` actually ships.
 
-## Summary for M1
+## Summary
 
 - Access mechanism, resolution default, and page-crossing address math:
   proven, via direct memory reads, not just visual inspection.
 - `ZXN_WRITE_MMU2` is a dead end under `-clib=classic` -- use
   `ZXN_WRITE_REG`/`ZXN_READ_REG` directly instead, same pattern as
   `bank.c`. **Use NextReg `$53` (MMU slot 3, `$6000-$7FFF`), not `$52`/slot
-  2** -- superseded post-M1, see the "RESOLVED" section above: slot 2
+  2** -- superseded later, see the "RESOLVED" section above: slot 2
   overlaps the ROM's system variables, and even after moving off it, every
   access through this window must also be wrapped in
   `intrinsic_di()`/`intrinsic_ei()` to actually stop interrupt-driven
@@ -230,5 +231,5 @@ actually ships `pal()`.
 - Any loop reaching all the way to `PICO_SCREEN_W`/`PICO_SCREEN_H` needs a
   counter wider than `uint8_t`.
 - Default Layer 2 palette contents and the handful of stray screenshot
-  pixels are open curiosities, not correctness risks -- revisit if `pal()`
-  work in M3 turns up something related, otherwise leave them.
+  pixels are open curiosities, not correctness risks -- revisit if later
+  `pal()` work turns up something related, otherwise leave them.

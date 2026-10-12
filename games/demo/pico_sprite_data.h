@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-/* M2 demo spritesheet: 16x16 (a 2x2 grid of 8x8 Pico-8-style sprite
+/* Demo spritesheet: 16x16 (a 2x2 grid of 8x8 Pico-8-style sprite
  * cells). Cell 0 (top-left) is a filled ball (colour 8, symmetric -- a
  * flip-correctness control). Cell 1 (top-right) is an "L" shape (colour
  * 11), deliberately asymmetric under both horizontal and vertical flip,

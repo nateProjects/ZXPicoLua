@@ -53,11 +53,11 @@ uint16_t pico_rnd(uint16_t n);
 
 /* tostr(val) -- decimal integer to string, writing into a caller-provided
  * buffer (at least 7 bytes: "-32768\0") rather than returning an
- * allocated string, the standard embedded-C idiom. Added for M4's
+ * allocated string, the standard embedded-C idiom. Added for the
  * picodiver port, whose HUD concatenates a score/level number into
- * on-screen text ("fish " + cab.score) -- cut from M3's scope (see this
- * header's top comment) for lack of a real reference-game need at the
- * time; this is that need. No hex/no-flags-equivalent variants (Pico-8's
+ * on-screen text ("fish " + cab.score) -- cut from the earlier math-module
+ * scope (see this header's top comment) for lack of a real reference-game
+ * need at the time; this is that need. No hex/no-flags-equivalent variants (Pico-8's
  * own tostr() flags) -- just the plain decimal case, the only one this
  * project has a real use for so far. */
 void pico_tostr_int(int16_t val, char *buf);
@@ -112,8 +112,7 @@ uint8_t pico_ord(const char *str, int16_t index);
 
 /* --- Fixed-point (Q16.16) --------------------------------------------
  *
- * Added for the Islander port (see /Users/nat/.claude/plans/polished-
- * churning-meerkat.md, M1): the first reference game whose own movement
+ * Added for the Islander port: the first reference game whose own movement
  * genuinely needs fractional accumulation -- `fric=0.1`-per-tick velocity
  * build-up against a `spd=1` cap, and `lerp(pos,tar,perc)` with
  * percentages like 0.0125-0.325 used throughout (camera, menus, UI).

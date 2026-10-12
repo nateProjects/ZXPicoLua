@@ -1,5 +1,5 @@
 #include <stdint.h>
-#include "m3_test.h"
+#include "math_data_test.h"
 #include "pico_math.h"
 #include "pico_video.h"
 #include "pico_gfx.h"
@@ -19,7 +19,7 @@ static uint8_t map_data[16] = {
     0, 1, 0, 1,
 };
 
-uint8_t m3_run_checks(void) {
+uint8_t math_data_run_checks(void) {
     uint8_t pass = 1;
     int16_t boot_count;
 
@@ -55,7 +55,7 @@ uint8_t m3_run_checks(void) {
     return pass;
 }
 
-void m3_draw(uint8_t pass) {
+void math_data_draw(uint8_t pass) {
     pico_pal(8, 11);
     pico_rectfill(4, 40, 11, 47, 8);  /* remapped -- should render colour 11 */
     pico_pal_reset();

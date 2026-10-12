@@ -1,22 +1,23 @@
-# M4 findings -- porting PicoDiver, the real integration test
+# Porting PicoDiver -- the real integration test
 
 `games/picodiver/` ports `PicoJS/games/picodiver/picodiver.js` (itself a
 port of the original Pico-8 cart `picodiver2.p8`,
 https://github.com/nateProjects/PicoDiver) to this library. Not a demo
-scene -- a complete, playable game, the real integration test M4 was
-meant to be.
+scene -- a complete, playable game, the real integration test this
+project needed.
 
 ## Scope, settled by reading the actual source, not guessed
 
-M3 was scoped against `picodiver.js`'s real API usage (it only needed
-`flr`/`pal`/`rnd` beyond M0-M2.5). Porting the full game confirmed that
-was the right call for picking M3's priorities, but a full game needs
-much more: `spr`/`map`/`btn`/`print`/`cls`/`color` all see heavy use.
-`color()`'s *implicit* current-colour state has no equivalent here (see
+The earlier math/RNG/pal work was scoped against `picodiver.js`'s real API
+usage (it only needed `flr`/`pal`/`rnd` beyond the framebuffer/drawing/
+sprite/input work). Porting the full game confirmed that was the right
+call for picking those priorities, but a full game needs much more:
+`spr`/`map`/`btn`/`print`/`cls`/`color` all see heavy use. `color()`'s
+*implicit* current-colour state has no equivalent here (see
 `pico_gfx.h`'s own explicit-colour-argument policy) -- ported mechanically
 by tracking a `curcol` variable in `main.c` itself, updated at each point
 the original calls `color(X)`, not as a library feature. `add`/`del`/`all`
-(JS array helpers, already decided against in M1) became a fixed-size
+(JS array helpers, already decided against earlier) became a fixed-size
 `obj[MAX_OBJS]` array with swap-and-shrink removal instead of a dynamic
 list -- the one place this diverges from a literal line-for-line port.
 
@@ -55,9 +56,9 @@ The full ported game -- library + game logic + the cart's original
 128x128 spritesheet (16KB) and 128x32 map (4KB) -- overflowed the 64K
 address space its `-clib=classic` resident image has to fit in (`Section
 exceeds 64k [0x8000,0x12361]`, ~9KB over). Rather than reach for
-`dark-room-next`'s banking machinery (a materially bigger addition, and
-the plan doc explicitly flagged this as not worth building until a real
-need showed up), checked what this *specific* cart's own map and sprite
+`dark-room-next`'s banking machinery right away (a materially bigger
+addition, not worth building until a real need showed up), checked what
+this *specific* cart's own map and sprite
 data actually reference:
 
 - Highest sprite index referenced anywhere (map tiles or game logic):
@@ -116,11 +117,11 @@ shipped rather than guessed at.
 
 ## Round 2: still "far too slow" after the above -- a real bottom-up benchmark, and what it actually found
 
-The three fixes above were a big improvement but the user correctly judged
-the result still unacceptable (ships not animating fluidly on the title
-screen, several seconds to respond to a keypress) and pointed out Pico-8
-itself -- at an *equivalent* 8MHz, slower than our 14MHz -- is still much
-faster. Rather than guess again, built an incremental `PERF_LEVEL`-gated
+The three fixes above were a big improvement but still left the result
+unacceptable (ships not animating fluidly on the title screen, several
+seconds to respond to a keypress) -- and Pico-8 itself, at an *equivalent*
+8MHz, slower than our 14MHz, is still much faster. Rather than guess
+again, built an incremental `PERF_LEVEL`-gated
 benchmark in `main.c` (empty loop, +cls, +one sprite, +one map tile, +full
 192-tile map, +map+ship strip) to measure each layer's real cost.
 
@@ -152,7 +153,7 @@ real `CALL`/`RET` round trips through library helpers (`l_gint`, `l_pint`,
 `l_asl`, `l_and`) even for trivial operations like copying a loop index,
 on top of the two real function calls (`sheet_pixel()`,
 `batch_pset_safe()`) every pixel already made. This -- not the MMU/page
-logic the M4 batch-write fix already addressed -- was the dominant
+logic the earlier batch-write fix already addressed -- was the dominant
 remaining cost. `--opt-code-speed -O3` (sccz80's own speed-optimizer
 flag) made no measurable difference (33 vs 36 units over a fixed window),
 confirming this is sccz80's baseline codegen quality for this kind of
@@ -179,8 +180,8 @@ page):
    `pset_safe()` -> `pico_pset()`, each paying a full DI/EI plus MMU
    page-select. The title screen alone draws ~150 glyphs across 7 lines.
    Rewritten to open one batch session per `print()` call (not per
-   glyph, and nowhere near the "one tile" batch-size guideline the M4
-   fix established for sprites -- a deliberate, accepted tradeoff here
+   glyph, and nowhere near the "one tile" batch-size guideline the
+   sprite fix above established -- a deliberate, accepted tradeoff here
    since a text line's pixels are far more likely to share one physical
    page than scattered sprite writes are) and write through (1) directly.
 
@@ -248,15 +249,15 @@ currently has essentially zero free bytes under the 64K limit.
 
 ## 28MHz: tried, confirmed it breaks keyboard input, reverted
 
-The user confirmed the Next supports a 4th CPU speed step (28MHz, raw
-NextReg `$07` value 3 -- this z88dk checkout's `zxn.h` only names
-constants up to `RTM_14MHZ`) and suggested pairing it with
+The Next supports a 4th CPU speed step (28MHz, raw NextReg `$07` value 3
+-- this z88dk checkout's `zxn.h` only names constants up to
+`RTM_14MHZ`), pairable with
 `REG_PERIPHERAL_3`/`RP3_DISABLE_CONTENTION` (both present in this
 checkout). Direct ZRCP register pokes confirmed the emulator genuinely
 accepts and reports back value 3 correctly. But setting it from inside
 `pico_video_init()` broke keyboard input: a key held via ZRCP's
 deterministic `set-ui-io-ports` (the same method that reliably verified
-input throughout M2.5) stopped registering at all, even held for several
+input throughout the earlier input work) stopped registering at all, even held for several
 seconds, while the identical test against a 14MHz build worked within
 2-3 seconds as expected. Isolated to the speed change itself, not
 contention -- tested with and without `RP3_DISABLE_CONTENTION`, both
@@ -276,7 +277,7 @@ broken input. Worth revisiting if more speed is needed later, starting
 from "why does a documented-instantaneous matrix read depend on CPU
 clock" rather than from scratch.
 
-## Methodology lessons from this milestone, worth remembering
+## Methodology lessons from this port, worth remembering
 
 **A full-game performance bug can look exactly like a hang.** The first
 sign of trouble was a completely black screen that stayed black for many
@@ -288,7 +289,7 @@ answer. Don't conclude "hung" from one impatient screenshot.
 
 **Raw physical-page memory scans aren't reliable on a continuously-
 flipping double-buffered scene.** The corruption-scanning technique
-proven in M0/M2.5 (dump all physical pages, check for unexpected non-zero
+proven earlier (dump all physical pages, check for unexpected non-zero
 bytes) produced an apparent few thousand stray bytes in picodiver's
 letterbox border during active gameplay -- but the actual *displayed*
 pixel at those exact coordinates (checked via `save-screen`, which always
@@ -296,7 +297,7 @@ captures the true current front buffer) was confirmed pure black, no
 discrepancy at all. The scan reads *fixed physical page numbers*, which
 alternate between being the displayed buffer and the actively-being-drawn
 one every single frame (picodiver redraws and flips unconditionally every
-frame, unlike the M2.5 demo, which only flips on actual change) -- a scan
+frame, unlike the input-testing demo, which only flips on actual change) -- a scan
 spanning multiple frames' worth of wall-clock time will sometimes catch a
 page mid-draw, transiently incomplete, and mistake that for corruption.
 The fix for next time: verify a continuously-animating double-buffered
@@ -306,8 +307,8 @@ method for static scenes or paused/idle moments, as every prior milestone
 that used it successfully happened to be.
 
 **The Makefile's `clean` target needs to be scoped per game, not global.**
-Added for M4 (multiple games sharing one `lib/`, see the plan's own
-multi-game Makefile design), `clean` originally did `rm -rf build/*` --
+Added once multiple games started sharing one `lib/`, `clean` originally
+did `rm -rf build/*` --
 wiping *every* game's build, not just the one being worked on. Building
 `demo` then `picodiver` (each with its own `clean` first) silently
 deleted the just-built demo binary, which briefly looked like a real

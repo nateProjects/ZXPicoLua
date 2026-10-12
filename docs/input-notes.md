@@ -1,4 +1,4 @@
-# M2.5 findings -- input (btn/btnp)
+# Input (btn/btnp) -- findings
 
 `lib/pico_input.c` (`pico_input_update`, `pico_btn`, `pico_btnp`) reads the
 classic 48K-compatible keyboard matrix via z88dk's portable `<input.h>`
@@ -10,7 +10,7 @@ classic 40-key matrix) -- unnecessary for six ordinary letter keys, all
 within the classic matrix the Next's PS/2 keyboard controller already
 emulates for compatibility. Confirmed linking cleanly under
 `-clib=classic +zxn` (no special library flag needed, unlike the Layer 2
-MMU helpers in M0).
+MMU helpers in the earlier framebuffer spike).
 
 Keys: Q/A/O/P for up/down/left/right (classic Spectrum "QAOP" convention
 -- the matrix has no real arrow-key signals), Z/X for the two action
@@ -34,19 +34,19 @@ multiple screenshots of the idle scene afterward all show a clean, fully-
 formed, stable ball. Doesn't eliminate tearing *during* an actual change -- that needed real
 double buffering, see below.
 
-## RESOLVED (post-human-testing): tearing during actual movement needed double buffering, not just "redraw on change" and not more CPU speed
+## RESOLVED (after interactive testing): tearing during actual movement needed double buffering, not just "redraw on change" and not more CPU speed
 
-Real human testing (not just screenshots) found the "redraw on change"
-fix above wasn't enough: the ball visibly flickered/tore *while moving*,
-settling down once it stopped -- exactly the pattern you'd expect from
-redrawing in place inside a framebuffer the display is simultaneously
-scanning out, since a moving sprite redraws every single frame by
-definition (there's no "unchanged" case to skip). First guess was raw
-CPU speed (the Next boots at classic-compatible 3.5MHz, and every
-`pico_pset()` pays real per-pixel overhead -- a DI/EI pair plus two
-NextReg port accesses for the MMU page switch) -- bumping to the Next's
-documented 14MHz (`REG_TURBO_MODE`/`RTM_14MHZ`) only helped "a little"
-per the human tester, not enough. The real giveaway: `dark-room-next`'s
+Playing it interactively (not just comparing screenshots) found the
+"redraw on change" fix above wasn't enough: the ball visibly
+flickered/tore *while moving*, settling down once it stopped -- exactly
+the pattern you'd expect from redrawing in place inside a framebuffer the
+display is simultaneously scanning out, since a moving sprite redraws
+every single frame by definition (there's no "unchanged" case to skip).
+First guess was raw CPU speed (the Next boots at classic-compatible
+3.5MHz, and every `pico_pset()` pays real per-pixel overhead -- a DI/EI
+pair plus two NextReg port accesses for the MMU page switch) -- bumping to
+the Next's documented 14MHz (`REG_TURBO_MODE`/`RTM_14MHZ`) only helped "a
+little" on real play, not enough. The real giveaway: `dark-room-next`'s
 own Space minigame, which animates sprites every frame too, never tore --
 but it uses Next *hardware* sprites (a separate compositing layer the
 video hardware reads independently), not framebuffer pixel writes, so it
@@ -90,10 +90,9 @@ unchanged) across all four mid-movement captures, only X changing. Using
 `send-keys-ascii`'s uncertain timing settles it -- pressing only RIGHT
 really does only move RIGHT, confirming the earlier drift was a synthetic
 rapid-tap timing artifact as suspected, not a real `pico_btn()`/`pico_input`
-bug. No real-keyboard testing session happened to re-confirm this
-specific point, but the deterministic ZRCP method used here is a much
-stronger signal than the original timing-dependent one that raised the
-question.
+bug. No further interactive session happened to re-confirm this specific
+point, but the deterministic ZRCP method used here is a much stronger
+signal than the original timing-dependent one that raised the question.
 
 ## Earlier automated testing via `send-keys-ascii`, superseded by `set-ui-io-ports` above
 
@@ -103,7 +102,7 @@ motivated going further rather than guessing) -- see the "RESOLVED"
 section above for how this was actually settled.
 
 ZRCP's `send-keys-ascii`/`send-keys-event` can simulate keypresses, so
-some verification was possible without a human at the keyboard:
+some verification was possible without actually sitting at the keyboard:
 
 - A single brief `send-keys-ascii` tap of any key consistently produced
   **no** measurable change -- plausible, not confirmed: the synthetic
@@ -129,21 +128,21 @@ some verification was possible without a human at the keyboard:
   quirk where certain key-state combinations can register a phantom key,
   and overlapping press/release timing from ten 50ms-apart synthetic taps
   landing against a 20ms frame poll is a plausible way to trigger
-  something like that, in a way an actual human pressing one key at a
-  time during normal play never would. But this is a plausible
-  explanation, not a confirmed one -- the automated tooling available
-  couldn't settle it either way, which is exactly the kind of thing
-  described in the project's own stated testing philosophy
-  ("measure, don't assume") as needing a real human or real hardware
-  rather than more synthetic-input guessing.
+  something like that, in a way pressing one key at a time during normal
+  play never would. But this is a plausible explanation, not a confirmed
+  one -- the automated tooling available couldn't settle it either way,
+  which is exactly the kind of thing described in the project's own
+  stated testing philosophy ("measure, don't assume") as needing real
+  interactive play or real hardware rather than more synthetic-input
+  guessing.
 
-**Original "what to check during human testing" ask, now superseded**:
-hold RIGHT (P) alone for a bit -- does the ball ever drift vertically? The
-deterministic `set-ui-io-ports` test in the "RESOLVED" section above
-answered this (no drift, Y stayed exactly constant across four
-mid-movement captures) -- still worth a real human glancing at it during
-normal play, since ZRCP testing however rigorous isn't the same as an
-actual keyboard, but no longer an open question blocking anything.
+**Original "what to check during interactive testing" ask, now
+superseded**: hold RIGHT (P) alone for a bit -- does the ball ever drift
+vertically? The deterministic `set-ui-io-ports` test in the "RESOLVED"
+section above answered this (no drift, Y stayed exactly constant across
+four mid-movement captures) -- still worth a glance during normal play,
+since ZRCP testing however rigorous isn't the same as an actual keyboard,
+but no longer an open question blocking anything.
 
 ## Deliberate scope cuts (not yet implemented)
 

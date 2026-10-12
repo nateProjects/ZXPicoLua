@@ -14,8 +14,8 @@ void pico_spr_init(const uint8_t *sheet_data, uint16_t sheet_w, uint16_t sheet_h
 
 /* palt(c, transparent) -- sets whether colour c (0-15) is treated as
  * transparent (skipped) when blitting sprites. Matches real Pico-8's
- * palt(): any number of colours can be transparent at once (unlike M2's
- * original pico_spr_transparent(), a single-colour placeholder this
+ * palt(): any number of colours can be transparent at once (unlike the
+ * earlier pico_spr_transparent(), a single-colour placeholder this
  * replaces). Defaults to colour 0 only, matching Pico-8's own default
  * palt() state. Checked against the sprite sheet's RAW stored colour, not
  * after pico_pal()'s remap (pico_video.h) -- the two are independent in
@@ -37,7 +37,7 @@ void pico_palt(uint8_t color, uint8_t transparent);
  * clips it correctly either way), and some real techniques (a scrolling
  * background drawn via two map() calls, one at the normal position and
  * one a full screen-width to its left/right to cover the wrap) need to
- * *start* off-screen on purpose -- added for M4's picodiver port, whose
+ * *start* off-screen on purpose -- added for the picodiver port, whose
  * title-screen ship background does exactly this. Small positive literals
  * at existing call sites still just work (plain int-to-int16_t
  * conversion). */
@@ -55,7 +55,7 @@ void pico_sspr(uint8_t sx, uint8_t sy, uint8_t sw, uint8_t sh,
 
 /* sget(x, y) -- reads a single pixel's colour index directly from the
  * registered spritesheet (not the screen/framebuffer -- pico_pget(),
- * pico_video.h, is the framebuffer equivalent). Added for M4's picodiver
+ * pico_video.h, is the framebuffer equivalent). Added for the picodiver
  * port, which uses this for pixel-perfect collision (dw817's method, the
  * same one the original Pico-8 cart and PicoJS's own port both use) --
  * out-of-range coordinates return 0, matching PicoJS's own picoJS.sget. */

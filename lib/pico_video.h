@@ -69,8 +69,8 @@ void pico_pal_reset(void);
  * see docs/input-notes.md's "double buffering" section for why this
  * exists (a sprite redrawn in place every frame, with no double
  * buffering, visibly tears when the display's own scanout catches the
- * framebuffer mid-redraw -- confirmed via real human testing, not just
- * theory). Because the back buffer alternates between two physical
+ * framebuffer mid-redraw -- confirmed by playing it interactively, not
+ * just theory). Because the back buffer alternates between two physical
  * banks, each one holds whatever was drawn into it *two* flips ago, not
  * one -- any animated content must track per-buffer state accordingly
  * (see the demo's own o_lit/x_lit/ball-position handling in
@@ -80,14 +80,14 @@ void pico_flip(void);
 /* Batch-write session: writes many pixels (pico_video_batch_pset()) under
  * ONE interrupt-disable + MMU page resolution instead of pico_pset()'s
  * usual per-pixel cost, only re-selecting the physical page when it
- * actually changes between pixels -- added for M4 after profiling found
- * this was the dominant cost in a real sprite/tile-heavy scene (see
- * pico_video.c's own comment for the measurement). Intended for a
- * library primitive blitting many pixels at once (pico_sprite.c's
+ * actually changes between pixels -- added for the picodiver port after
+ * profiling found this was the dominant cost in a real sprite/tile-heavy
+ * scene (see pico_video.c's own comment for the measurement). Intended
+ * for a library primitive blitting many pixels at once (pico_sprite.c's
  * pico_sspr(), the first user) -- not for general game code, which
  * should keep using the simpler pico_pset(). Keep a batch to one sprite/
  * tile's worth of pixels: interrupts stay off for the WHOLE batch, and a
- * long batch means a long window the M0 interrupt-corruption fix
+ * long batch means a long window the earlier interrupt-corruption fix
  * (docs/layer2-notes.md) can't preempt at all.
  *
  *   uint8_t prev = pico_video_batch_begin();

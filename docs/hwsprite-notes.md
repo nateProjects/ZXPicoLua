@@ -1,8 +1,8 @@
-# M0 spike findings -- hardware sprites in ZXPicoLua's own config
+# Hardware sprites in ZXPicoLua's own config -- spike findings
 
-De-risking pass for the Islander-as-Next-game plan (`/Users/nat/.claude/plans/
-polished-churning-meerkat.md`), same role `dark-room-next/docs/sprite-notes.md`
-played for that project. Throwaway spike, `games/hwspike/main.c` (not part of
+De-risking pass for porting Islander as a native Next game, same role
+`dark-room-next/docs/sprite-notes.md` played for that project. Throwaway
+spike, `games/hwspike/main.c` (not part of
 the real game build). Reference material: `next-resources/docs/
 zxnext_notes.pdf` (Register $15/$19/$1C sections, read directly via
 `pdftotext` after code-level investigation stalled -- see "the actual bug"
@@ -76,5 +76,5 @@ Whether the tilemap hardware's backing store can exceed the visible 40x32
 cell grid via the offset registers (`NR_TILEMAP_OFFSET_X_H/L`, `_Y`,
 `lib/pico_tilemap.c:30-32`, defined but never used for scrolling yet), or
 whether camera movement across Islander's 128x64 world needs explicit
-software tile-streaming at the grid edges regardless. Separate spike, M1's
-first real task per the plan.
+software tile-streaming at the grid edges regardless. Separate spike --
+see `docs/tilemap-viewport-notes.md`.
