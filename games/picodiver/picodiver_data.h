@@ -32,7 +32,20 @@ extern const uint8_t picodiver_sprite_data[PICODIVER_SHEET_W * PICODIVER_SHEET_H
  * the sprite sheet above: both pico_map() call sites in games/picodiver/
  * main.c only ever read rows 0-15 (back()'s row 4-15, shipshow()'s row
  * 0-3) -- confirmed by checking every pico_map() call in this game, not
- * guessed. */
+ * guessed.
+ *
+ * Banked (lib/pico_bank.h), split out of this same source file into its
+ * own picodiver_map_data.c (2026-10-12) -- see that file's own top
+ * comment for why only the map data moved and the sprite sheet stayed
+ * resident. Valid only while PICODIVER_MAP_PHYSICAL_PAGE is paged in
+ * (pico_bank_page_in()/page_out() around each of main.c's own 3 read
+ * sites); page 8 picked because it's the one this exact z88dk/ZEsarUX
+ * setup has already verified reliable (islander's own banking work hit
+ * real, unexplained per-page-number failures on this same toolchain --
+ * see z88dk_banking_reference memory's eleventh-module entry -- so this
+ * reuses a known-good number rather than picking a fresh untested one;
+ * re-verify via ZRCP before trusting it regardless, same discipline). */
+#define PICODIVER_MAP_PHYSICAL_PAGE 8
 #define PICODIVER_MAP_W 128
 #define PICODIVER_MAP_H 16
 extern const uint8_t picodiver_map_data[PICODIVER_MAP_W * PICODIVER_MAP_H];

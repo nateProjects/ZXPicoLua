@@ -114,6 +114,138 @@ improvement. Still not smooth real-time (would need ~40ms/frame for
 "noticeably slow but genuinely interactive" is real and worth having
 shipped rather than guessed at.
 
+## Round 2: still "far too slow" after the above -- a real bottom-up benchmark, and what it actually found
+
+The three fixes above were a big improvement but the user correctly judged
+the result still unacceptable (ships not animating fluidly on the title
+screen, several seconds to respond to a keypress) and pointed out Pico-8
+itself -- at an *equivalent* 8MHz, slower than our 14MHz -- is still much
+faster. Rather than guess again, built an incremental `PERF_LEVEL`-gated
+benchmark in `main.c` (empty loop, +cls, +one sprite, +one map tile, +full
+192-tile map, +map+ship strip) to measure each layer's real cost.
+
+**The benchmark's own counter variable was itself unreliable, and that was
+a real finding, not just friction.** `perf_counter`'s linked BSS address
+(from each build's own `.map`, re-extracted every time -- a known gotcha
+by this point) landed within ~200 bytes of `$FFFF` in every build. Reading
+it back via ZRCP gave static, implausible values (identical across a
+3-second gap, including one build reading back a huge 32-bit "counter"
+that never changed). `get-registers` showed why: `SP` dips as low as
+`$FF2F` during heavy nested drawing (`map()` -> `spr()` -> `sspr()` ->
+the blit loop is 4-5 calls deep, each consuming real stack bytes per
+sccz80's calling convention) -- *below* where the counter variable lived,
+meaning the "counter" was transiently reading live stack contents, not
+the real variable. Padding to push the variable to a safer address wasn't
+possible either: the build had essentially zero headroom left under the
+64K resident limit (confirmed by `Section exceeds 64k` errors from adding
+even 512 bytes). Abandoned the BSS-counter approach; `get-tstates-partial`
+(a true hardware cycle counter, immune to this) and direct screenshot/
+`set-ui-io-ports` timing (this project's other proven-reliable method)
+were used instead.
+
+**The real finding, from reading actual `.asm` output, not guessing
+again:** compiled `lib/pico_sprite.c` with `zcc -S` and read the generated
+Z80 for `pico_sspr()`'s per-pixel loop directly. Every iteration --
+*including* the already-"fast" unscaled path -- re-fetched every local
+through stack-relative addressing (`ld hl,N; add hl,sp; ...`) and made
+real `CALL`/`RET` round trips through library helpers (`l_gint`, `l_pint`,
+`l_asl`, `l_and`) even for trivial operations like copying a loop index,
+on top of the two real function calls (`sheet_pixel()`,
+`batch_pset_safe()`) every pixel already made. This -- not the MMU/page
+logic the M4 batch-write fix already addressed -- was the dominant
+remaining cost. `--opt-code-speed -O3` (sccz80's own speed-optimizer
+flag) made no measurable difference (33 vs 36 units over a fixed window),
+confirming this is sccz80's baseline codegen quality for this kind of
+loop, not a missing flag.
+
+Three more fixes, all exploiting that a Layer 2 **row never crosses a
+physical page boundary** (`PICO_PHYS_W`=256 divides `LAYER2_WINDOW_SIZE`
+=8192 evenly -- every row of 256 bytes sits entirely inside one 32-row
+page):
+
+1. **`pico_video_batch_row()`** (`pico_video.c`/`.h`) -- resolves the
+   destination page/pointer once per *row* instead of once per pixel
+   (`pico_video_batch_pset()`'s granularity), returning a raw `uint8_t*`
+   the caller walks with plain pointer arithmetic. `pico_video_remap()`
+   also exposes `pal()`'s remap table directly so a hot loop can inline
+   the lookup instead of paying a function call for it too.
+2. **`pico_sprite.c`: a new `blit_unscaled()`** replaces the unscaled
+   (1:1) path's per-pixel `sheet_pixel()`/`batch_pset_safe()` calls with
+   raw source/destination pointer walks, resolving the destination page
+   once per row via (1). The general scaled path (needed by nothing in
+   picodiver, kept for API completeness) is unchanged.
+3. **`lib/pico_gfx.c`: `draw_glyph()`/`print_impl()`** had the *exact
+   same* per-pixel-call pathology -- every lit font pixel went through
+   `pset_safe()` -> `pico_pset()`, each paying a full DI/EI plus MMU
+   page-select. The title screen alone draws ~150 glyphs across 7 lines.
+   Rewritten to open one batch session per `print()` call (not per
+   glyph, and nowhere near the "one tile" batch-size guideline the M4
+   fix established for sprites -- a deliberate, accepted tradeoff here
+   since a text line's pixels are far more likely to share one physical
+   page than scattered sprite writes are) and write through (1) directly.
+
+**`pico_cls()` was also clearing 3x more than necessary.** It cleared the
+*entire* physical 256x192 surface (6 pages, 49152 bytes) every call, even
+though picodiver's logical canvas is only the centred 128x128 (16384
+bytes) -- the 64px/32px letterbox border is cleared once by
+`pico_video_init()` and, by construction, never drawn into again (every
+primitive clips to `[0,pico_screen_w)x[0,pico_screen_h)` before
+translating to physical coordinates). Split into `cls_physical_full()`
+(used only by `pico_video_init()`'s one-time double-buffer priming) and a
+new `pico_cls()` that only clears the logical rectangle, row by row (same
+one-page-per-row property as above). Measured directly: ~66ms/call before,
+~32ms/call after, on an otherwise-unmodified build -- a real 2x, not just
+an arithmetic argument.
+
+**These three fixes together didn't fit in 64K without `-O3`.** Adding
+`draw_glyph()`'s row-walking logic pushed the build ~46 bytes over the
+resident limit; `--opt-code-speed -O3` (sccz80's peephole optimizer,
+tested above for *speed* with no measurable effect) turned out to shrink
+*code size* enough to fit. Added to the Makefile unconditionally
+(`-O3` on both games' builds) since it's free and can only help.
+
+**End-to-end result, measured honestly:** the real (non-benchmark) game
+no longer hangs or appears crashed -- confirmed the title screen renders
+within a few seconds of boot, and (via a 20-second held-key test) the full
+state machine (title -> gameplay -> death) now completes within that
+window, where before a *single frame* alone took 10-25+ seconds. Real,
+substantial progress, but still well short of feeling responsive in real
+time -- holding a key for 1-2 seconds still shows no visible reaction.
+Not yet re-benchmarked layer-by-layer with a trustworthy counter (the
+`PERF_LEVEL` harness was removed from `main.c` rather than fixed, since
+`get-tstates-partial` + screenshot timing proved sufficient and more
+reliable for the measurements that mattered here) -- a reasonable next
+step if more speed work happens is a breakpoint-pass-count-based
+iteration counter (`get-breakpointspasscount` after `enable-breakpoints`
++ `set-breakpoint <N> PC=<addr>`, 1-indexed, both needed before the
+breakpoint can be configured at all) rather than a BSS variable, which
+this round showed isn't safe to place blindly in this program's memory
+layout.
+
+**Open, not yet understood: this program's BSS now sits uncomfortably
+close to where the stack actually operates.** `SP` was observed as low as
+`$FF2F`-`$FF12` during normal (non-benchmark) play, while real game-state
+globals (`_mode`, `_frame`, `_cab`, etc., per the `.map`) live at
+`$FF64`-`$FF9D` -- *above* that low-water mark, meaning they're within the
+stack's demonstrated working range, not just theoretically reachable.
+z88dk classic's CRT starts `SP` at `$FFFF` with no fixed/reserved stack
+region separate from BSS (`CRT_MAX_HEAP_ADDRESS = $FFFF - 169` is only a
+heap-growth limit for `malloc`, which this project doesn't use, and
+doesn't appear to bound BSS placement at all). Despite this, extensive
+testing (register reads showing `PC` genuinely advancing through
+different functions, not stuck; the full title->gameplay->death state
+sequence completing correctly over a longer window) found no evidence of
+actual corrupted game state -- the earlier-looking "corruption" (`_mode`
+reading back as 205) was itself traced to the same stack-overlap-at-read-
+time artifact as the benchmark counter, not a real in-game bug. Still,
+this is a latent risk worth real attention before adding more deeply-
+nested drawing code (each additional call level costs real stack bytes
+per sccz80's convention, confirmed via its own generated `.asm`) --
+either by reducing call depth in the hot drawing paths (`map()` ->
+`spr()` -> `sspr()` -> `blit_unscaled()` is 4 levels deep today) or by
+reducing overall resident size to buy back headroom, since the build
+currently has essentially zero free bytes under the 64K limit.
+
 ## 28MHz: tried, confirmed it breaks keyboard input, reverted
 
 The user confirmed the Next supports a 4th CPU speed step (28MHz, raw
