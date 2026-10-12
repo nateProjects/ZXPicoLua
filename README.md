@@ -6,7 +6,7 @@ See [`docs/pico8-vs-zxpicolua-reference.md`](docs/pico8-vs-zxpicolua-reference.m
 
 ## Status
 
-Current version: **0.2.0** (pre-1.0, see [CHANGELOG.md](CHANGELOG.md) — [Semantic Versioning](https://semver.org/), no API-stability guarantee yet).
+Current version: **0.3.0** (pre-1.0, see [CHANGELOG.md](CHANGELOG.md) — [Semantic Versioning](https://semver.org/), no API-stability guarantee yet).
 
 The core API is complete: Layer 2 framebuffer access, shape/text primitives, software sprites, keyboard input, math/RNG, tile maps, persistent storage (esxDOS), a hardware tilemap background, and hardware sprites. [PicoDiver](games/picodiver/) is the primary example — a full playable game ported end to end (title screen, gameplay, collision, HUD, scrolling background), not a demo.
 
@@ -23,7 +23,7 @@ make GAME=picodiver run  # builds and launches it in ZEsarUX
 make clean-all           # removes all build/ output
 ```
 
-Each game lives in its own directory under `games/`, always linked against the shared `lib/`. `games/picodiver/` is the real, worked example; `games/demo/`, `games/fixedtest/`, `games/hwspike/`, and `games/speedtest/` are smaller milestone/scratch tests kept for reference, not polished examples.
+Each game lives in its own directory under `games/`, always linked against the shared `lib/`. `games/picodiver/` is the real, worked example; `games/demo/`, `games/fixedtest/`, `games/hwspike/`, `games/speedtest/`, and `games/bankcalltest/` are smaller milestone/scratch tests kept for reference, not polished examples.
 
 ## Library layout
 

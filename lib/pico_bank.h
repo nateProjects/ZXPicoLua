@@ -30,4 +30,25 @@
 uint8_t pico_bank_page_in(uint8_t physical_page);
 void pico_bank_page_out(uint8_t previous_page);
 
+/* --- Banking CODE, not just data --------------------------------------
+ *
+ * The Makefile's own PAGE_<n>_<name> mechanism (the pattern rule next to
+ * CBANK_* in the Makefile) isn't data-specific -- it substitutes
+ * code_compiler/rodata_compiler/data_compiler/bss_compiler identically,
+ * so a .c file whose only content is a function bodies the same way a
+ * data module does, linked at a real, CALLable address while its page is
+ * active. Confirmed directly (games/bankcalltest/, docs/bank-call-notes.md)
+ * -- not just inferred from the mechanism's own description. No special
+ * calling convention is needed beyond the obvious:
+ *
+ *   uint8_t prev = pico_bank_page_in(SOME_PHYSICAL_PAGE);
+ *   result = some_banked_function(args...);   // an ordinary call
+ *   pico_bank_page_out(prev);
+ *
+ * -- an ordinary forward declaration (in the banked module's own header)
+ * plus a plain C call, exactly like any other function. Useful when
+ * banked DATA alone doesn't buy back enough resident-code headroom under
+ * z88dk classic's 64K ceiling; add the module to BANKED_CSRCS/CBANK_* in
+ * the Makefile the same way a banked data file already is. */
+
 #endif

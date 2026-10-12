@@ -86,6 +86,21 @@ ESXDOS_LIB :=
 # alone wasn't enough.
 BANKED_CSRCS := picodiver_map_data
 CBANK_picodiver_map_data := 8
+else ifeq ($(GAME),bankcalltest)
+# Proves lib/pico_bank.h's page-in/page-out window also works for banked
+# CODE, not just the banked const DATA every other user of this mechanism
+# has exercised so far (picodiver_map_data.c above, Harvester/Islander's
+# sprite/map data) -- same PAGE_<n>_<name> section-rename trick covers
+# code_compiler/rodata_compiler/data_compiler/bss_compiler identically
+# (see the pattern rule above), so nothing new was needed here beyond
+# proving it: banked_fn.c compiles to a normal CALLable function, placed
+# at $2000 like any other banked module, reachable exactly like banked
+# data is -- page the physical page in, CALL it (an ordinary C call,
+# since the symbol is resident at a real address while paged in), page
+# back out. See docs/bank-call-notes.md for the verification.
+BANKED_CSRCS := banked_fn
+CBANK_banked_fn := 8
+ESXDOS_LIB := -lesxdos
 else
 ESXDOS_LIB := -lesxdos
 endif
