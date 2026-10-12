@@ -49,6 +49,18 @@ void pico_bank_page_out(uint8_t previous_page);
  * plus a plain C call, exactly like any other function. Useful when
  * banked DATA alone doesn't buy back enough resident-code headroom under
  * z88dk classic's 64K ceiling; add the module to BANKED_CSRCS/CBANK_* in
- * the Makefile the same way a banked data file already is. */
+ * the Makefile the same way a banked data file already is.
+ *
+ * HAZARD (found the hard way in a sibling project, Harvester, not by
+ * bankcalltest's own trivially simple test function): any `static const`
+ * table inside a banked file MUST be at file scope, not function-local.
+ * A function-local one gets emitted INLINE in the function's own code by
+ * sccz80 -- this mechanism's section-rename script maps the whole file's
+ * sections into one, so that data ends up sitting in the middle of the
+ * banked code, and execution falling through it (or a branch landing
+ * past where you think the function ends) runs the data bytes as
+ * instructions. String literals are fine (emitted at the file's end, not
+ * inline) -- only const arrays/structs declared inside a function body
+ * are the hazard. See docs/bank-call-notes.md for the full incident. */
 
 #endif

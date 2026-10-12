@@ -20,7 +20,21 @@ BUILD_DIR  := build/$(GAME)
 SDCARD_DIR := sdcard
 TARGET     := $(BUILD_DIR)/$(GAME)
 
-LIB_SRCS := $(wildcard $(LIB_DIR)/*.c)
+# pico_music.c (Arkos Tracker 2 playback, lib/pico_music.h) is opt-IN,
+# not wildcarded in by default like every other lib/*.c module -- unlike
+# anything else here, linking against it unconditionally pulls in z88dk's
+# full bundled Arkos player (target/zx/psg/asm_arkos_zx_smc.asm, ~2200
+# lines of heavily-unrolled AY-trick asm) even for a game that never
+# calls a single pico_music_*/pico_sfx_* function, since the linker only
+# sees "this object references ply_akg_*", not "and nothing ever calls
+# it". Confirmed the hard way (2026-10-12): adding it to LIB_SRCS
+# unconditionally took picodiver from 14336 free bytes to a large
+# overflow outright, not a trim-a-few-constants-sized problem. A game
+# that actually wants music/sfx adds pico_music.c to its own SRCS
+# explicitly in its own ifeq block below (none do yet -- no real Arkos
+# content has been authored for this project), same opt-in spirit as
+# BANKED_CSRCS.
+LIB_SRCS := $(filter-out $(LIB_DIR)/pico_music.c,$(wildcard $(LIB_DIR)/*.c))
 # pico_mul_z80n.asm (2026-10-12): hardware-mul override for classic
 # clib's own generic l_mult/l_mult_u/l_mult_0 -- see that file's own
 # top comment. Passed as a raw source alongside LIB_SRCS so it links
@@ -100,6 +114,13 @@ else ifeq ($(GAME),bankcalltest)
 # back out. See docs/bank-call-notes.md for the verification.
 BANKED_CSRCS := banked_fn
 CBANK_banked_fn := 8
+ESXDOS_LIB := -lesxdos
+else ifeq ($(GAME),musictest)
+# Opts into pico_music.c (excluded from LIB_SRCS's own default wildcard
+# above -- see that comment for why) to prove it links cleanly through
+# this project's real build pipeline, not just a standalone throwaway
+# like the /tmp link-test in docs/music-notes.md.
+LIB_SRCS += $(LIB_DIR)/pico_music.c
 ESXDOS_LIB := -lesxdos
 else
 ESXDOS_LIB := -lesxdos

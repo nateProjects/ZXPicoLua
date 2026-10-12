@@ -8,6 +8,20 @@ call site).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-12
+
+### Added
+- `lib/pico_music.c`/`.h` — music/sfx playback via z88dk's bundled Arkos
+  Tracker 2 player (`<psg/arkos.h>`). Opt-in only (excluded from the
+  default `LIB_SRCS` wildcard — see the Makefile's own comment): linking
+  it unconditionally pulled picodiver's build from 14336 free bytes to
+  an outright overflow. Verified linking and running (silencing, the one
+  entry point that needs no song data) via `games/musictest/`; full
+  playback is unverified pending real Arkos Tracker 2 content.
+- `tools/p8_map_to_c.py` — converts a Pico-8 cart's `__map__`/`__gff__`
+  sections to C source for `pico_map_init()`/`pico_fset_all()`. Verified
+  against two real carts.
+
 ## [0.3.0] - 2026-10-12
 
 ### Added

@@ -62,6 +62,21 @@ through the paged-in window, not by coincidence.
   not an issue here (this project's banked data readers are always leaf
   calls), but worth checking before banking something that calls back out
   into library code.
+- **Every const table in a banked file must be at FILE scope, not
+  function-local.** A function-local `static const` array gets emitted
+  INLINE in the function's own code by sccz80 -- the Makefile's section-
+  rename script maps every section of the file into one, so that data
+  sits in the middle of the banked code, and falling through it at
+  runtime (or a branch landing past the function's real end) executes
+  the data bytes as instructions instead. A real incident in a sibling
+  project (Harvester, not caught by `bankcalltest`'s own trivially simple
+  test function): a crash that only reproduced through the one code path
+  that happened to reach a function-local const table, traced via
+  resident-global progress markers read over ZRCP, not from any build
+  error. String literals in a banked function are fine (sccz80 emits
+  those at the file's end, not inline) -- only `static const` arrays/
+  structs declared inside a function body are the hazard. Keep any const
+  table a banked function needs at file scope.
 - Reused physical page 8 (already proven reliable on this exact
   z88dk/ZEsarUX setup for data) for `bankcalltest`'s own build -- a
   different `.nex` entirely, so no conflict with picodiver's own page-8
