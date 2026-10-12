@@ -3,6 +3,22 @@
 #include "pico_video.h"
 #include "pico_font.h"
 
+/* --- current colour state (pico_gfx.h's own top comment) ------------------ */
+
+static uint8_t current_color = 6; /* Pico-8's own default pen colour at cart start */
+
+void pico_color(uint8_t c) {
+    current_color = c;
+}
+
+/* Resolves PICO_CURRENT_COLOR to the real current colour, a no-op for
+ * any genuine 0-15 (or dither-encoded >15, for the callers that still
+ * pass those straight through) value -- called once at the top of each
+ * of the 4 functions that accept the sentinel (pico_gfx.h's own list). */
+static uint8_t resolve_color(uint8_t color) {
+    return (color == PICO_CURRENT_COLOR) ? current_color : color;
+}
+
 /* --- fillp dither state -------------------------------------------------- */
 
 static uint16_t fill_pattern = 0;
@@ -37,6 +53,22 @@ static void resolve_fill_colours(uint8_t color, uint8_t *primary, uint8_t *secon
     }
 }
 
+/* --- camera() state -------------------------------------------------------
+ *
+ * Applied inside pset_safe()/fill_run() below -- the two chokepoints every
+ * shape primitive in this file already routes all of its actual pixel
+ * writes through, so offsetting there makes rect/line/circ/oval (and their
+ * fill variants) camera-aware with no change to any of those functions
+ * themselves. print_impl() is the one exception -- see its own comment. */
+
+static int16_t camera_x = 0;
+static int16_t camera_y = 0;
+
+void pico_camera(int16_t x, int16_t y) {
+    camera_x = x;
+    camera_y = y;
+}
+
 /* --- bounds-checked plotting ---------------------------------------------
  *
  * pico_pset()/pico_pget() (pico_video.h) take unchecked uint8_t coordinates
@@ -53,6 +85,8 @@ static void resolve_fill_colours(uint8_t color, uint8_t *primary, uint8_t *secon
  * logical canvas instead of wrapping. */
 
 static void pset_safe(int16_t x, int16_t y, uint8_t color) {
+    x -= camera_x;
+    y -= camera_y;
     if (x < 0 || y < 0 || x >= (int16_t)pico_screen_w || y >= (int16_t)pico_screen_h) return;
     pico_pset((uint8_t)x, (uint8_t)y, color);
 }
@@ -63,6 +97,9 @@ static void pset_safe(int16_t x, int16_t y, uint8_t color) {
 static void fill_run(int16_t x0, int16_t x1, int16_t y, uint8_t primary, uint8_t secondary, uint8_t has_secondary) {
     uint8_t x;
     int16_t t;
+    x0 -= camera_x;
+    x1 -= camera_x;
+    y -= camera_y;
     if (x1 < x0) { t = x0; x0 = x1; x1 = t; }
     if (y < 0 || y >= (int16_t)pico_screen_h) return;
     if (x0 < 0) x0 = 0;
@@ -101,6 +138,7 @@ void pico_rectfill(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1, uint8_t color
 
 void pico_rect(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1, uint8_t color) {
     uint8_t tmp, x, y;
+    color = resolve_color(color);
     if (x1 < x0) { tmp = x0; x0 = x1; x1 = tmp; }
     if (y1 < y0) { tmp = y0; y0 = y1; y1 = tmp; }
 
@@ -124,6 +162,7 @@ void pico_rect(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1, uint8_t color) {
 
 void pico_line(uint8_t ax0, uint8_t ay0, uint8_t ax1, uint8_t ay1, uint8_t color) {
     int16_t x0 = ax0, y0 = ay0, x1 = ax1, y1 = ay1;
+    color = resolve_color(color);
     int16_t dx = (x1 > x0) ? (x1 - x0) : (x0 - x1);
     int16_t dy = (y1 > y0) ? (y1 - y0) : (y0 - y1);
     int8_t sx = (x0 < x1) ? 1 : -1;
@@ -304,7 +343,18 @@ void pico_cursor(uint8_t x, uint8_t y) {
     cursor_y = y;
 }
 
-static void draw_glyph(uint8_t ch, int16_t px, int16_t py, uint8_t color) {
+/* Writes within an ALREADY-OPEN batch session (see print_impl() below) --
+ * profiling picodiver's title screen (7 lines, ~150 glyphs) found the
+ * original per-pixel pset_safe()/pico_pset() path paid a full DI/EI plus
+ * an MMU page-select port write for every single SET bit in the font
+ * bitmap, the same per-pixel-call pathology pico_sprite.c's blit had
+ * (see pico_video.c/pico_sprite.c's own comments) -- several seconds just
+ * to draw the title screen's text, on top of the sprite/map fixes. Here
+ * the caller opens one batch for the WHOLE string, so DI/EI and the MMU
+ * page selection (pico_video_batch_row(), which only re-writes the page
+ * when it actually changes) are paid at most a handful of times for an
+ * entire multi-line print(), not once per lit pixel. */
+static void draw_glyph(uint8_t ch, int16_t px, int16_t py, uint8_t remapped_color) {
     uint8_t glyph_index, row, col, bits;
     const uint8_t *rows;
 
@@ -315,10 +365,14 @@ static void draw_glyph(uint8_t ch, int16_t px, int16_t py, uint8_t color) {
     rows = &pico_font_data[(uint16_t)glyph_index * PICO_FONT_CELL_H];
 
     for (row = 0; row < PICO_FONT_CELL_H; row++) {
+        int16_t py_row = py + (int16_t)row;
+        if (py_row < 0 || py_row >= (int16_t)pico_screen_h) continue;
         bits = rows[row];
         for (col = 0; col < PICO_FONT_CELL_W; col++) {
-            if ((bits >> (PICO_FONT_CELL_W - 1 - col)) & 1) {
-                pset_safe(px + col, py + row, color);
+            int16_t px_col = px + (int16_t)col;
+            if ((bits >> (PICO_FONT_CELL_W - 1 - col)) & 1 &&
+                px_col >= 0 && px_col < (int16_t)pico_screen_w) {
+                *pico_video_batch_row((uint8_t)px_col, (uint8_t)py_row) = remapped_color;
             }
         }
     }
@@ -331,6 +385,9 @@ static void draw_glyph(uint8_t ch, int16_t px, int16_t py, uint8_t color) {
 static void print_impl(const char *text, int16_t x, int16_t y, uint8_t color, int16_t *end_x, int16_t *end_y) {
     int16_t px = x, py = y, start_x = x;
     uint8_t ch;
+    uint8_t remapped_color = pico_video_remap(color);
+    uint8_t prev_page = pico_video_batch_begin();
+
     while ((ch = (uint8_t)*text) != 0) {
         text++;
         if (ch == '\n') {
@@ -338,21 +395,27 @@ static void print_impl(const char *text, int16_t x, int16_t y, uint8_t color, in
             px = start_x;
             continue;
         }
-        draw_glyph(ch, px, py, color);
+        /* Camera offset applied ONLY here, not to px/py themselves --
+         * *end_x/*end_y below feed pico_cursor()'s chaining for
+         * print_at_cursor(), and offsetting px/py directly would double-
+         * apply the camera shift on every subsequent chained call. */
+        draw_glyph(ch, (int16_t)(px - camera_x), (int16_t)(py - camera_y), remapped_color);
         px += PICO_FONT_CELL_W;
     }
+
+    pico_video_batch_end(prev_page);
     *end_x = start_x;
     *end_y = py;
 }
 
 void pico_print(const char *text, uint8_t x, uint8_t y, uint8_t color) {
     int16_t ex, ey;
-    print_impl(text, x, y, color, &ex, &ey);
+    print_impl(text, x, y, resolve_color(color), &ex, &ey);
 }
 
 void pico_print_at_cursor(const char *text, uint8_t color) {
     int16_t ex, ey;
-    print_impl(text, cursor_x, cursor_y, color, &ex, &ey);
+    print_impl(text, cursor_x, cursor_y, resolve_color(color), &ex, &ey);
     cursor_x = (uint8_t)ex;
     cursor_y = (uint8_t)ey;
 }

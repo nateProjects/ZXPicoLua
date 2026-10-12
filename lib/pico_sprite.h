@@ -61,4 +61,22 @@ void pico_sspr(uint8_t sx, uint8_t sy, uint8_t sw, uint8_t sh,
  * out-of-range coordinates return 0, matching PicoJS's own picoJS.sget. */
 uint8_t pico_sget(uint8_t x, uint8_t y);
 
+/* Pixel-perfect collision between two sprite-sheet cells placed on
+ * screen, dw817's method (pico_sget()'s own comment) -- the same
+ * algorithm the original Pico-8 cart and PicoJS's own port used, not
+ * invented for this port. n1/w1/h1 and n2/w2/h2 follow pico_spr()'s own
+ * convention exactly (sprite index + size in whole 8px cells), so an
+ * existing pico_spr(n, x, y, w, h, ...) call's own n/x/y/w/h can be
+ * passed straight through. Walks the smaller sprite's own pixels against
+ * the larger one (same optimisation the original algorithm uses) with a
+ * cheap bounding-box pre-check first (NOT in the original -- a safe,
+ * behaviour-equivalent addition: two sprites whose boxes don't overlap
+ * can't have overlapping pixels either, so this only ever skips work the
+ * original would have wasted). Returns 1 on any overlapping pair of
+ * non-zero (non-colour-0) pixels, matching real Pico-8's own fget()-free
+ * pixel collision convention -- colour 0 is always "empty" here, same as
+ * pico_map()'s "tile 0 is empty" and pico_palt()'s own default. */
+uint8_t pico_spr_collide(uint8_t n1, int16_t x1, int16_t y1, uint8_t w1, uint8_t h1,
+                          uint8_t n2, int16_t x2, int16_t y2, uint8_t w2, uint8_t h2);
+
 #endif

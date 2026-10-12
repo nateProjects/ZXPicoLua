@@ -5,7 +5,16 @@
 static uint8_t *map_data = 0;
 static uint16_t map_w = 0;
 static uint16_t map_h = 0;
+/* fget()/fset()/map_layer() support -- opt out with -DPICO_NO_MAP_FLAGS
+ * (per-game, in that game's own build) when a game doesn't use any of
+ * them, to recover this array's 256 bytes. A real, measured need: this
+ * project's own z88dk classic builds have essentially zero spare bytes
+ * under the 64K resident limit (docs/picodiver-notes.md), and picodiver
+ * itself never calls any of these (confirmed by grep, not assumed --
+ * it branches on raw sprite-index ranges instead, see its own notes). */
+#ifndef PICO_NO_MAP_FLAGS
 static uint8_t sprite_flags[256];
+#endif
 
 void pico_map_init(uint8_t *data, uint16_t w, uint16_t h) {
     map_data = data;
@@ -23,6 +32,7 @@ void pico_mset(uint8_t x, uint8_t y, uint8_t v) {
     map_data[(uint16_t)y * map_w + x] = v;
 }
 
+#ifndef PICO_NO_MAP_FLAGS
 uint8_t pico_fget(uint8_t n, uint8_t f) {
     if (f >= 8) return 0;
     return (uint8_t)((sprite_flags[n] >> f) & 1);
@@ -41,6 +51,7 @@ uint8_t pico_fget_all(uint8_t n) {
 void pico_fset_all(uint8_t n, uint8_t flags) {
     sprite_flags[n] = flags;
 }
+#endif
 
 static void map_draw(uint8_t cel_x, uint8_t cel_y, int16_t sx, int16_t sy,
                       uint8_t cel_w, uint8_t cel_h, uint8_t layer_filter, uint8_t layer_mask) {
@@ -60,7 +71,11 @@ static void map_draw(uint8_t cel_x, uint8_t cel_y, int16_t sx, int16_t sy,
                     tile = map_data[ty * map_w + tx];
                     /* Pico-8 convention: tile 0 is always "empty", never
                      * drawn -- ported from PicoJS's own picoJS.map. */
+#ifndef PICO_NO_MAP_FLAGS
                     if (tile != 0 && (!layer_filter || (sprite_flags[tile] & layer_mask) != 0)) {
+#else
+                    if (tile != 0) {
+#endif
                         pico_spr(tile, (int16_t)(sx + dx * 8), (int16_t)(sy + dy * 8), 1, 1, 0, 0);
                     }
                 }
@@ -77,6 +92,8 @@ void pico_map(uint8_t cel_x, uint8_t cel_y, int16_t sx, int16_t sy, uint8_t cel_
     map_draw(cel_x, cel_y, sx, sy, cel_w, cel_h, 0, 0);
 }
 
+#ifndef PICO_NO_MAP_FLAGS
 void pico_map_layer(uint8_t cel_x, uint8_t cel_y, int16_t sx, int16_t sy, uint8_t cel_w, uint8_t cel_h, uint8_t layer_mask) {
     map_draw(cel_x, cel_y, sx, sy, cel_w, cel_h, 1, layer_mask);
 }
+#endif

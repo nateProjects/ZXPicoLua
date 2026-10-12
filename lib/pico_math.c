@@ -108,3 +108,60 @@ void pico_tostr_int(int16_t val, char *buf) {
     while (i > 0) buf[j++] = tmp[--i];
     buf[j] = 0;
 }
+
+void pico_sub(const char *str, int16_t pos0, int16_t pos1, char *out) {
+    int16_t len = 0;
+    int16_t i;
+    while (str[len] != 0) len++; /* strlen -- avoids pulling in <string.h> for one call */
+
+    if (pos0 < 0) pos0 = (int16_t)(len + pos0 + 1);
+    if (pos1 < 0) pos1 = (int16_t)(len + pos1 + 1);
+    if (pos0 < 1) pos0 = 1;
+    if (pos1 > len) pos1 = len;
+
+    if (pos0 > pos1 || pos0 > len) {
+        out[0] = 0;
+        return;
+    }
+    for (i = pos0; i <= pos1; i++) out[i - pos0] = str[i - 1];
+    out[pos1 - pos0 + 1] = 0;
+}
+
+void pico_chr(uint8_t code, char *out) {
+    out[0] = (char)code;
+    out[1] = 0;
+}
+
+uint8_t pico_ord(const char *str, int16_t index) {
+    int16_t len = 0;
+    while (str[len] != 0) len++;
+    if (index < 1 || index > len) return 0;
+    return (uint8_t)str[index - 1];
+}
+
+static uint32_t time_ticks = 0;
+
+void pico_tick(void) {
+    time_ticks++;
+}
+
+uint32_t pico_time(void) {
+    return time_ticks;
+}
+
+int16_t pico_flr(pico_fix_t x) {
+    return PICO_FIX_TO_INT(x);
+}
+
+int16_t pico_ceil(pico_fix_t x) {
+    return (int16_t)(-pico_flr(-x));
+}
+
+pico_fix_t pico_fix_mul(pico_fix_t a, pico_fix_t b) {
+    int64_t wide = (int64_t)a * (int64_t)b;
+    return (pico_fix_t)(wide >> PICO_FIX_SHIFT);
+}
+
+pico_fix_t pico_fix_lerp(pico_fix_t pos, pico_fix_t tar, pico_fix_t perc) {
+    return pos + pico_fix_mul(tar - pos, perc);
+}

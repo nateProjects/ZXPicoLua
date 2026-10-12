@@ -31,6 +31,12 @@ extern uint16_t pico_screen_h;
  * single palette index. */
 void pico_cls(uint8_t color);
 
+/* Clears just [x0,x1]x[y0,y1] (inclusive, logical coordinates) instead of
+ * the whole canvas -- see pico_video.c's own comment for why this exists
+ * (picodiver's gameplay screen needs its "sky" strip cleared every frame
+ * without disturbing the ocean below it). */
+void pico_cls_rect(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1, uint8_t color);
+
 /* Writes/reads a single pixel's palette index, in LOGICAL canvas
  * coordinates -- x in [0, pico_screen_w), y in [0, pico_screen_h).
  * Out-of-range coordinates are not checked (same as Pico-8/PicoJS).
@@ -93,9 +99,43 @@ void pico_flip(void);
  * a caller with coordinates that can go out of logical-canvas range
  * (e.g. a partly off-screen sprite) must clip before calling, the same
  * requirement pico_sprite.c's own pset_safe() already meets for
- * pico_pset(). */
+ * pico_pset().
+ *
+ * NESTS: begin/end calls nest (a depth counter, pico_video.c) -- only
+ * the outermost pair actually does DI/EI and page save/restore. A game
+ * can wrap SEVERAL pico_spr() calls (each already a begin/end pair
+ * internally) in one outer begin/end to turn N DI/EI pairs into 1 --
+ * worthwhile once a frame draws enough sprites that per-call overhead
+ * itself becomes the bottleneck (confirmed directly for picodiver's own
+ * creature/HUD-icon-heavy frames, docs/picodiver-notes.md). */
 uint8_t pico_video_batch_begin(void);
 void pico_video_batch_pset(uint8_t x, uint8_t y, uint8_t color);
 void pico_video_batch_end(uint8_t previous_page);
+
+/* Row-granular batch access -- resolves/selects the destination page for
+ * logical (x,y) and returns a raw pointer to that byte, which the caller
+ * may then step by +-1 to reach (x+-1, y) with no further calls: a Layer 2
+ * row never crosses a physical page boundary (PICO_PHYS_W=256 divides
+ * evenly into an 8192-byte page). For a hot per-pixel blit loop where
+ * pico_video_batch_pset()'s own per-pixel call overhead is itself the
+ * bottleneck (confirmed by profiling, not assumed -- see pico_video.c).
+ * Does not bounds-check x/y, like pico_video_batch_pset(). */
+uint8_t *pico_video_batch_row(uint8_t x, uint8_t y);
+
+/* Applies pal()'s remap to a raw colour index -- the same mapping
+ * pico_pset()/pico_video_batch_pset() apply internally, exposed so a
+ * tight blit loop can inline it instead of paying a function call per
+ * pixel for it. */
+uint8_t pico_video_remap(uint8_t color);
+
+/* Loads Pico-8's real default palette (pico_palette.h's pico8_palette)
+ * into Layer 2's own palette bank 0, indices 0-15 -- NOT called
+ * automatically by pico_video_init(), so existing games keep whatever
+ * colours they've already been drawing with (the Next's own default boot
+ * palette) unless they opt in. A game that wants Pico-8-faithful colours
+ * (and, if it also uses the hardware tilemap, consistent colours between
+ * the two -- see pico_tilemap_load_pico8_palette()) should call this once
+ * after pico_video_init(). */
+void pico_video_load_pico8_palette(void);
 
 #endif

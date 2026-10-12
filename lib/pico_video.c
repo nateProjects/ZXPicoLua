@@ -48,6 +48,7 @@
 #include <intrinsic.h>
 #include <string.h>
 #include "pico_video.h"
+#include "pico_palette.h"
 
 #define MMU_SLOT_3_REG 0x53
 
@@ -96,6 +97,26 @@ static void mmu_window_page_out(uint8_t previous_page) {
     ZXN_WRITE_REG(MMU_SLOT_3_REG, previous_page);
 }
 
+/* Clears the WHOLE physical 256x192 surface, letterbox border included --
+ * used only by pico_video_init() to blank both buffers once at startup.
+ * pico_cls() (below) deliberately does NOT do this every call -- see its
+ * own comment. */
+static void cls_physical_full(uint8_t color) {
+    uint8_t base = layer2_base_page();
+    uint8_t prev;
+    uint8_t i;
+
+    intrinsic_di();
+    prev = mmu_window_page_in(base);
+    memset(LAYER2_WINDOW_ADDR, color, LAYER2_WINDOW_SIZE);
+    for (i = 1; i < LAYER2_PAGES; i++) {
+        ZXN_WRITE_REG(MMU_SLOT_3_REG, base + i);
+        memset(LAYER2_WINDOW_ADDR, color, LAYER2_WINDOW_SIZE);
+    }
+    mmu_window_page_out(prev);
+    intrinsic_ei();
+}
+
 void pico_video_init(uint16_t logical_w, uint16_t logical_h) {
     /* NextReg $70 (Layer 2 Control Register,
      * https://wiki.specnext.dev/Layer_2_Control_Register) bit 4 selects
@@ -130,7 +151,7 @@ void pico_video_init(uint16_t logical_w, uint16_t logical_h) {
      * isn't yet explained). Reverted to the proven-reliable 14MHz rather
      * than ship something with broken input -- see docs/picodiver-notes.md
      * for the full writeup; worth revisiting if more speed is needed. */
-    ZXN_WRITE_REG(REG_TURBO_MODE, RTM_14MHZ);
+    ZXN_WRITE_REG(REG_TURBO_MODE, 0x03); /* 28MHz -- see comment above; re-confirmed keyboard input still works via ZRCP's set-ui-io-ports for mode transitions (X/O), though this session's own movement-key (LEFT/RIGHT/UP/DOWN) testing via the same tool proved unreliable at BOTH 14MHz and 28MHz, undermining confidence that the earlier 28MHz revert was really about clock speed rather than a ZRCP testing-tool limitation -- see docs/picodiver-notes.md. */
 
     pico_screen_w = logical_w;
     pico_screen_h = logical_h;
@@ -165,9 +186,9 @@ void pico_video_init(uint16_t logical_w, uint16_t logical_h) {
      * it again into the new back buffer -- see games/demo/main.c for the
      * pattern; not automated here since not every game needs the same
      * initial content priming. */
-    pico_cls(0);
+    cls_physical_full(0);
     pico_flip();
-    pico_cls(0);
+    cls_physical_full(0);
 
     IO_LAYER_2_CONFIG = IL2C_SHOW_LAYER_2;
 }
@@ -204,25 +225,70 @@ void pico_flip(void) {
     ZXN_WRITE_REG(REG_LAYER_2_SHADOW_RAM_BANK, main_bank);
 }
 
-void pico_cls(uint8_t color) {
-    uint8_t base = layer2_base_page();
+/* Clears a sub-rectangle of the logical canvas -- pico_cls() (below) is
+ * just this called over the whole canvas, which is also why it needs no
+ * separate implementation of its own. Added for picodiver's gameplay
+ * screen, which needs to clear/redraw its "sky" strip (the scrolling
+ * ship, y<32) every frame while leaving the ocean below untouched
+ * (handled instead by targeted per-sprite erase, docs/picodiver-notes.md)
+ * -- clearing the whole canvas every frame would wipe the ocean too,
+ * forcing a full 192-tile redraw right back on top of it.
+ *
+ * A row (pico_screen_w bytes starting at origin_x) always fits inside one
+ * physical page -- PICO_PHYS_W (256) divides LAYER2_WINDOW_SIZE (8192)
+ * evenly -- so each row needs at most one MMU page select, same property
+ * this exploited before being generalised from a canvas-only pico_cls(). */
+void pico_cls_rect(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1, uint8_t color) {
     uint8_t prev;
+    uint16_t y;
+    uint16_t w; /* NOT uint8_t -- a full-width clear (x0=0, x1=255) needs
+                 * w=256, which overflows uint8_t to 0, silently turning
+                 * the whole call into a no-op memset(...,0) (confirmed
+                 * directly, not guessed: this is exactly why Stage 10's
+                 * full-screen clears -- the title->game one-time wipe,
+                 * the icon HUD clear, the ship banner's own clear, all
+                 * x0=0/x1=SCREEN_W-1 -- silently did nothing, leaving
+                 * stale content on screen. Never surfaced before Stage
+                 * 10 because no earlier game's logical canvas was ever
+                 * wider than 128, so w never got anywhere near 256). */
 
-    /* cls() writes raw bytes via memset, not pico_pset() -- unlike every
+    if (x1 >= pico_screen_w) x1 = (uint8_t)(pico_screen_w - 1);
+    if (y1 >= pico_screen_h) y1 = (uint8_t)(pico_screen_h - 1);
+    if (x0 > x1 || y0 > y1) return;
+    w = (uint16_t)(x1 - x0 + 1);
+
+    /* cls writes raw bytes via memset, not pico_pset() -- unlike every
      * other primitive, so it needs its own pal() remap applied here
      * explicitly (PicoJS's own cls() goes through the same draw-palette
      * remap as everything else, picoJS.js's resolveColour()). */
     if (color < 16) color = pal_table[color];
 
-    intrinsic_di();
-    prev = mmu_window_page_in(base);
-    memset(LAYER2_WINDOW_ADDR, color, LAYER2_WINDOW_SIZE);
-    for (uint8_t i = 1; i < LAYER2_PAGES; i++) {
-        ZXN_WRITE_REG(MMU_SLOT_3_REG, base + i);
-        memset(LAYER2_WINDOW_ADDR, color, LAYER2_WINDOW_SIZE);
+    /* Goes through the shared batch session (pico_video_batch_begin()/
+     * pico_video_batch_row()/pico_video_batch_end()) instead of its own
+     * separate DI/EI + raw MMU writes, for two reasons, both confirmed by
+     * direct ZRCP frame-counter measurement, not assumed:
+     * (1) pico_video_batch_row() already only re-selects the MMU page
+     * when it actually changes between rows -- a physical page is 32
+     * rows tall (LAYER2_WINDOW_SIZE / PICO_PHYS_W), so a full 128-row
+     * clear only crosses a page boundary 4 times, not 128; this used to
+     * write the page unconditionally every row, pure redundant NextReg
+     * port I/O.
+     * (2) going through the NESTABLE batch session (pico_video.h's own
+     * comment) means a caller that wraps a whole frame's pico_cls() +
+     * several pico_spr() calls in one outer pico_video_batch_begin()/
+     * end() pair pays DI/EI once for the entire frame, not once for the
+     * clear and again for every sprite -- picodiver's own creature/HUD-
+     * icon-heavy frames were the case that made this matter in practice
+     * (docs/picodiver-notes.md). */
+    prev = pico_video_batch_begin();
+    for (y = y0; y <= y1; y++) {
+        memset(pico_video_batch_row(x0, (uint8_t)y), color, w);
     }
-    mmu_window_page_out(prev);
-    intrinsic_ei();
+    pico_video_batch_end(prev);
+}
+
+void pico_cls(uint8_t color) {
+    pico_cls_rect(0, 0, (uint8_t)(pico_screen_w - 1), (uint8_t)(pico_screen_h - 1), color);
 }
 
 void pico_pset(uint8_t x, uint8_t y, uint8_t color) {
@@ -259,15 +325,38 @@ void pico_pset(uint8_t x, uint8_t y, uint8_t color) {
  * for the same reason pico_pset()'s own critical section has to stay
  * brief (docs/layer2-notes.md's "RESOLVED" section: an interrupt handler
  * can corrupt whatever page is paged in if it fires mid-access; a long
- * batch means a long window where that can't be preempted at all). */
+ * batch means a long window where that can't be preempted at all).
+ *
+ * NESTING: begin/end calls nest (a plain depth counter) -- the outermost
+ * begin() is the only one that actually does DI + resolves the base
+ * page, and the outermost end() is the only one that actually restores
+ * the page and re-enables interrupts; everything in between is a no-op
+ * depth change. This lets a caller explicitly wrap SEVERAL pico_spr()
+ * calls (each of which already calls begin/end once internally) in one
+ * outer begin/end pair, turning N separate DI/EI pairs into 1 -- added
+ * after direct measurement found picodiver's own per-frame cost scaling
+ * with sprite-CALL count, not just total pixels (docs/picodiver-notes.md):
+ * cab_show()'s own 2 small 8x8 blits cost nearly as much as pico_cls()'s
+ * entire 128-row clear, which per-row page-skipping alone didn't explain.
+ * Safe to nest arbitrarily deep -- unlike the single-sprite case this
+ * deliberately extends the "interrupts off" window to a whole frame's
+ * worth of sprites when a caller opts into it (same order of magnitude
+ * pico_cls_rect()'s own already-single-DI-span 128 rows), not a new kind
+ * of risk, just a larger version of one already accepted elsewhere. */
 static uint8_t batch_base_page;
 static uint8_t batch_current_page;
+static uint8_t batch_depth;
+static uint8_t batch_saved_page;
 
 uint8_t pico_video_batch_begin(void) {
-    intrinsic_di();
-    batch_base_page = layer2_base_page();
-    batch_current_page = 0xFF; /* sentinel: no page selected yet this batch */
-    return ZXN_READ_REG(MMU_SLOT_3_REG);
+    if (batch_depth == 0) {
+        intrinsic_di();
+        batch_base_page = layer2_base_page();
+        batch_current_page = 0xFF; /* sentinel: no page selected yet this batch */
+        batch_saved_page = ZXN_READ_REG(MMU_SLOT_3_REG);
+    }
+    batch_depth++;
+    return batch_saved_page;
 }
 
 void pico_video_batch_pset(uint8_t x, uint8_t y, uint8_t color) {
@@ -284,8 +373,63 @@ void pico_video_batch_pset(uint8_t x, uint8_t y, uint8_t color) {
 }
 
 void pico_video_batch_end(uint8_t previous_page) {
-    ZXN_WRITE_REG(MMU_SLOT_3_REG, previous_page);
-    intrinsic_ei();
+    (void)previous_page; /* only meaningful at the outermost nesting level -- see batch_saved_page */
+    if (batch_depth > 0) batch_depth--;
+    if (batch_depth == 0) {
+        ZXN_WRITE_REG(MMU_SLOT_3_REG, batch_saved_page);
+        intrinsic_ei();
+    }
+}
+
+/* Row-granular batch access, added when profiling picodiver's sprite/map
+ * blits found pico_video_batch_pset()'s per-PIXEL cost was itself still
+ * the bottleneck even after the page-resolution batching above -- not the
+ * MMU logic, but sccz80's codegen for the two function calls (sheet_pixel()
+ * + batch_pset_safe()) a naive per-pixel loop makes: every call re-spills
+ * all locals through stack-relative addressing (confirmed by reading the
+ * generated .asm, not assumed), dwarfing the handful of real T-states the
+ * MMU page switch and pixel write actually need.
+ *
+ * A Layer 2 row is PICO_PHYS_W (256) bytes and a physical page is
+ * LAYER2_WINDOW_SIZE (8192) bytes -- exactly 32 rows -- so EVERY possible
+ * (origin_y+y) row lies entirely inside one page; incrementing the pointer
+ * this returns can never cross a page boundary while y stays fixed. This
+ * lets a blit loop resolve the destination page/pointer ONCE per row
+ * (not once per pixel) and then walk a raw uint8_t* across the row with
+ * plain pointer arithmetic -- no further calls, no further MMU writes. */
+uint8_t *pico_video_batch_row(uint8_t x, uint8_t y) {
+    uint16_t offset = (uint16_t)(origin_y + y) * PICO_PHYS_W + (origin_x + x);
+    uint8_t page = batch_base_page + (offset >> 13);
+
+    if (page != batch_current_page) {
+        ZXN_WRITE_REG(MMU_SLOT_3_REG, page);
+        batch_current_page = page;
+    }
+    return (uint8_t *)(0x6000 + (offset & 0x1FFF));
+}
+
+/* Exposes pal()'s remap table so a tight blit loop (pico_sprite.c) can
+ * inline the lookup instead of paying a function-call-per-pixel for it. */
+uint8_t pico_video_remap(uint8_t color) {
+    return (color < 16) ? pal_table[color] : color;
+}
+
+/* Two writes per index, same full 9-bit RRRGGGBBB protocol as
+ * pico_tilemap_set_color() (see that function's own comment for why the
+ * simpler single-write REG_PALETTE_VALUE_8 path isn't good enough --
+ * only 2-bit blue precision). RPC_SELECT_LAYER_2_PALETTE_0 is already
+ * named in z88dk's own <arch/zxn.h>, unlike the tilemap's equivalent. */
+void pico_video_load_pico8_palette(void) {
+    uint8_t i;
+    for (i = 0; i < 16; i++) {
+        uint8_t r = pico8_palette[i][0];
+        uint8_t g = pico8_palette[i][1];
+        uint8_t b = pico8_palette[i][2];
+        ZXN_WRITE_REG(REG_PALETTE_CONTROL, RPC_SELECT_LAYER_2_PALETTE_0);
+        ZXN_WRITE_REG(REG_PALETTE_INDEX, i);
+        ZXN_WRITE_REG(REG_PALETTE_VALUE_16, (uint8_t)((r << 5) | (g << 2) | (b >> 1)));
+        ZXN_WRITE_REG(REG_PALETTE_VALUE_16, (uint8_t)(b & 1));
+    }
 }
 
 uint8_t pico_pget(uint8_t x, uint8_t y) {
