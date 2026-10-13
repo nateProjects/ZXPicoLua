@@ -83,3 +83,16 @@ through the paged-in window, not by coincidence.
   usage; still worth a fresh ZRCP check (not just reuse-and-assume) the
   first time a *new* page number is tried for code, same discipline as any
   new page number for data (`z88dk_banking_reference`).
+- **Avoid physical pages 18-29 for any banked module, code or data.**
+  Root-caused (2026-10-13, via a sibling project, Harvester/Islander,
+  then independently reconfirmed directly against THIS project's own
+  `pico_video.c`): `pico_video_init()` leaves Layer 2's main bank at its
+  cold-boot default (bank 9 = pages 18-23) and allocates the shadow bank
+  3 16K-banks further (bank 12 = pages 24-29), then clears both at
+  startup -- a module banked onto any page in that range links fine,
+  produces a byte-correct `.nex`, and then reads back all-zero at
+  runtime, because Layer 2's own init silently clears it moments after
+  boot. This is exactly the "page 18/20/22 mysteriously fail" story from
+  `z88dk_banking_reference` -- the root cause wasn't known at the time,
+  only found later. See `lib/pico_bank.h`'s own comment for the proven-
+  safe alternative pages (8/12/14/16/17/30).

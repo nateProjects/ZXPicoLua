@@ -22,7 +22,25 @@
  * content). Nothing else in ZXPicoLua or its games uses NextReg $51 or
  * $2000-$3FFF (pico_video.c's Layer 2 window is MMU slot 3/$6000-$7FFF;
  * pico_tilemap.c's tile defs live in fixed Spectrum "Bank 5"/$4000-$7FFF;
- * pico_hwsprite.c is I/O-port-only) -- safe to claim for this. */
+ * pico_hwsprite.c is I/O-port-only) -- safe to claim for this.
+ *
+ * PHYSICAL PAGE CHOICE: avoid 18-29. Confirmed directly in THIS project's
+ * own pico_video.c, not just inherited secondhand -- pico_video_init()
+ * leaves Layer 2's main bank at its cold-boot default (bank 9 = pages
+ * 18-23, LAYER2_PAGES=6) and allocates the shadow bank 3 16K-banks
+ * further (bank 12 = pages 24-29), then clears both. A banked module
+ * placed on any page in that range gets silently zeroed by that startup
+ * clear -- a byte-correct .nex file, all-zero at runtime, the exact
+ * failure mode a sibling project (Harvester/Islander) hit and spent real
+ * effort root-causing (dark-room-next's own banking convention happened
+ * to start at page 18, which collided with this project's own Layer 2
+ * range the moment it was reused here). 8/12/14 (used by picodiver,
+ * bankcalltest) and 16/17/30 are confirmed clear of this; page 10 is
+ * also a poor choice (it's Spectrum "Bank 5"'s own half, the
+ * tilemap/screen area pico_tilemap.c uses). Still confirm any NEW page
+ * number via ZRCP (page it in, read known bytes back) before trusting
+ * it -- this explains the known-bad range, it doesn't guarantee every
+ * other page is safe on every future z88dk/ZEsarUX combination. */
 #define PICO_BANK_WINDOW_REG 0x51
 
 /* Pages `physical_page` into the shared window and returns whatever page

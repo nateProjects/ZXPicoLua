@@ -8,6 +8,17 @@ call site).
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-13
+
+### Fixed
+- Documented the root cause of physical pages 18-29 failing for any
+  banked module (`lib/pico_bank.h`, `docs/bank-call-notes.md`): they're
+  Layer 2's own main+shadow bank range, silently zeroed by
+  `pico_video_init()` at startup. Previously only known as "these three
+  pages empirically fail" with no explanation (`z88dk_banking_reference`);
+  root-caused via a sibling project (Harvester), reconfirmed directly
+  against this project's own `pico_video.c`. No code change.
+
 ## [0.4.0] - 2026-10-12
 
 ### Added
