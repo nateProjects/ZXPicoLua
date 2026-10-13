@@ -8,6 +8,19 @@ call site).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-13
+
+### Added
+- `tools/p8_sfx_to_c.py` + `lib/pico_sfx_synth.c`/`.h` — automated
+  Pico-8 `__sfx__`-to-AY converter and player, the lower-fidelity
+  alternative to `pico_music.c`'s Arkos Tracker 2 path. Opt-in (same
+  reason as `pico_music.c` — real, measured resident-size cost). Verified
+  against a real cart (byte-for-byte, by hand) and via a real AY
+  waveform capture (`games/sfxtest/`, a self-authored synthetic sfx, not
+  derived from any real game). Known limitations: per-note effects and
+  custom waveforms are parsed but not synthesized — see
+  `docs/sfx-convert-notes.md`.
+
 ## [0.4.1] - 2026-10-13
 
 ### Fixed
