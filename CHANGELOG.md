@@ -8,6 +8,18 @@ call site).
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-13
+
+### Added
+- `tools/arkos_song_to_asm.py` — converts an Arkos Tracker `.aks` song to
+  a linkable `.asm` for `pico_music.h`, via Arkos Tracker 3's own bundled
+  CLI tools. Confirmed end to end against a real track: converted,
+  linked, and verified producing continuous real music on the emulated
+  AY chip (a 12-second waveform capture, 91/91 windows active — a clear
+  signature distinct from a one-shot sfx). Works around two real AT3-
+  vs-AT2 CLI differences (see `docs/music-notes.md`). No copyrighted
+  content committed — the verification track stayed local/ad-hoc.
+
 ## [0.7.0] - 2026-10-13
 
 ### Added
