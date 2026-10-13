@@ -318,6 +318,84 @@ being traced back to a missing file, not a code bug. Fixed: `clean`
 now only removes `$(BUILD_DIR)` (the current `$(GAME)`'s own build
 directory); `clean-all` removes everything.
 
+## Stack/BSS collision -- the "tentacle trail" bug's real cause (2026-10-13)
+
+The octopus trail bug (the one the split-`prev_oct_head`/`prev_oct_body`
+dirty-rect fix, above, was supposed to have settled) came back after the
+real-music work (`docs/music-notes.md`). Not a logic regression -- a
+genuine, measured stack/data collision, confirmed directly via ZRCP, not
+inferred:
+
+- `get-registers` polled repeatedly during completely normal play (even
+  just sitting on the title screen, no octopus-specific code running)
+  showed `SP` regularly dipping to `$FF4B-$FF59`.
+- `prev_oct_head`/`prev_oct_body` (the exact arrays the earlier fix added)
+  lived at `$FF54`/`$FF5E` -- directly inside that range.
+- Every `CALL`/interrupt push during ordinary execution was overwriting
+  real, persistent game-state bytes with transient stack content. Unlike
+  a sprite-sheet CONST byte (overwritten-then-restored within one call's
+  own lifetime, invisible), a `DirtyRect` written once per frame and read
+  the *next* frame has a whole frame's worth of unrelated stack traffic
+  between the write and the read -- plenty of opportunity for exactly
+  this kind of corruption to stick.
+- Confirmed this predated the music work, not caused by it: rebuilt the
+  prior commit (no `pico_music_banked_play_frame()` call at all) and
+  measured the same collision (`SP` still reached `$FF50`). The music
+  change nudged it ~5 bytes deeper, not the root cause -- just enough to
+  flip a previously-silent collision into a visible one.
+
+**Root cause: picodiver's resident image was simply too big relative to
+real stack depth.** `BSS_END_tail` sat at `$FF84` -- only 124 bytes below
+the stack's own start address (`$FFFF`, `TAR__register_sp` in z88dk's
+`ram_crt0.asm`) -- while genuine call depth during normal play (interrupt
+handler + nested draw calls) reached ~180 bytes below `$FFFF`. z88dk's
+crt0 doesn't cross-check this; a build "succeeds" (no 64K overflow) as
+long as the *total* image fits, with no enforced gap between BSS and the
+stack's own reach.
+
+**Fix: bank `picodiver_sprite_data` (`games/picodiver/picodiver_data.c`,
+8192 bytes -- exactly `lib/pico_bank.h`'s single-page ceiling, no
+multi-page split needed) the same way `picodiver_map_data` already is.**
+Recovered the resident budget at the source instead of chasing the
+symptom. `pico_spr_init()` only *stores* the sheet pointer (confirmed by
+reading `lib/pico_sprite.c` -- it never dereferences it), so no library
+changes were needed: every `pico_spr()`/`pico_spr_collide()` call site in
+`games/picodiver/main.c` just needed its own
+`pico_bank_page_in(PICODIVER_SPRITE_PHYSICAL_PAGE)`/`page_out()` pair
+(`cab_show()`, `objs_update()`'s collision check, `objs_show()`,
+`oct_update()`'s collision check, `oct_show()`, the HUD icon loop) --
+the same proven pattern used throughout this project, just at more call
+sites than before.
+
+**One real wrinkle**: `ship_show()` already paged in `picodiver_map_data`
+*and* called `pico_spr()` in the same loop -- fine when the sprite sheet
+was resident, broken once it's banked too (the single shared window can
+only hold one physical page at a time, and map data + sprite data are
+both needed to draw one tile). Fixed by buffering all 64 tile IDs into a
+small stack array while the map page is in, paging it out, *then* paging
+in the sprite page for a second pass that does the actual `pico_spr()`
+calls -- two sequential page visits instead of one page holding both.
+
+**Result, measured**: `BSS_END_tail` dropped from `$FF84` to `$E0C6` --
+margin went from ~150 bytes to ~8000. Re-measured `SP` during real
+gameplay (ZRCP, `set-ui-io-ports`/direct `write-memory` of `_mode` to
+force gameplay state since simulated keypresses weren't reliably
+registering as `btnp()` edges this session): minimum observed `SP` was
+`$FECB`, over 7600 bytes clear of `BSS_END_tail` -- nowhere close.
+Screenshots during active play (octopus, multiple fish, HUD oxygen/life
+icons redrawing) show no corruption or trail artifacts.
+
+**Lesson for next time**: a resident-budget fix that "just barely" clears
+the 64K ceiling (the kind this project has done several times, "150 bytes
+free") is not actually safe even if the linker accepts it -- the real
+constraint isn't the 64K ceiling itself, it's leaving enough clearance
+between `BSS_END_tail` and the stack's own natural operating depth
+(measured here at ~180 bytes below `$FFFF` even in fairly shallow code
+paths, and that's not necessarily a hard ceiling either). Scraping by on
+the *link-time* budget alone isn't sufficient confirmation; a live `SP`
+reading on at least one build is cheap insurance once a game's resident
+margin gets this tight.
+
 ## Deliberately not ported
 
 - `sfx(n)` -- all 5 call sites skipped. No audio API in this library yet.

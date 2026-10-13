@@ -419,9 +419,11 @@ static void cab_move(void) {
  * this buffer erases the right area whether cab.dr changed since or
  * not"), 24px wide (x-8..x+16) x 8px tall. */
 static void cab_show(void) {
+    uint8_t prev_page = pico_bank_page_in(PICODIVER_SPRITE_PHYSICAL_PAGE);
     pico_spr(cab_img, cab_x, cab_y, 1, 1, cab_dr, 0);
     if (cab_dr) pico_spr(cab_sp, (int16_t)(cab_x + 8), cab_y, 1, 1, cab_dr, 0);
     else        pico_spr(cab_sp, (int16_t)(cab_x - 8), cab_y, 1, 1, cab_dr, 0);
+    pico_bank_page_out(prev_page);
     track_rect(&prev_cab[buf_idx], (int16_t)(cab_x - 8), cab_y, 24, 8);
 }
 
@@ -516,6 +518,8 @@ static void objs_update(void) {
      * mode, which alone makes certain creatures cost a life, isn't
      * implemented). */
     i = 0;
+    {
+    uint8_t prev_page = pico_bank_page_in(PICODIVER_SPRITE_PHYSICAL_PAGE);
     while (i < obj_count) {
         uint8_t removed = 0;
         if (pico_spr_collide(cab_img, cab_x, cab_y, 1, 1,
@@ -529,6 +533,8 @@ static void objs_update(void) {
             removed = 1;
         }
         if (!removed) i++;
+    }
+    pico_bank_page_out(prev_page);
     }
 }
 
@@ -548,11 +554,13 @@ static void objs_erase(void) {
 
 static void objs_show(void) {
     uint8_t i;
+    uint8_t prev_page = pico_bank_page_in(PICODIVER_SPRITE_PHYSICAL_PAGE);
     for (i = 0; i < obj_count; i++) {
         pico_spr(objs[i].sprcur, objs[i].x, objs[i].y, objs[i].wid, objs[i].hi, objs[i].face, 0);
         track_rect(&prev_objs[buf_idx][i], objs[i].x, objs[i].y,
                    (uint8_t)(objs[i].wid * 8), (uint8_t)(objs[i].hi * 8));
     }
+    pico_bank_page_out(prev_page);
 }
 
 /* The octopus -- a separate fixed singleton (not pool-spawned), per the
@@ -578,16 +586,20 @@ static void oct_update(void) {
      * than the original's own single 16px-tall read from sprite 11's
      * position alone -- see this file's STAGE 6 comment for why that's
      * not reproduced here. */
-    if (frame % 20 == 0 && score > 0 &&
-        (pico_spr_collide(cab_img, cab_x, cab_y, 1, 1, 11, oct_x, 32, 1, 1) ||
-         pico_spr_collide(cab_img, cab_x, cab_y, 1, 1, oct_t, oct_x, 40, 1, 1))) {
-        score--;
+    if (frame % 20 == 0 && score > 0) {
+        uint8_t prev_page = pico_bank_page_in(PICODIVER_SPRITE_PHYSICAL_PAGE);
+        uint8_t hit = pico_spr_collide(cab_img, cab_x, cab_y, 1, 1, 11, oct_x, 32, 1, 1) ||
+                      pico_spr_collide(cab_img, cab_x, cab_y, 1, 1, oct_t, oct_x, 40, 1, 1);
+        pico_bank_page_out(prev_page);
+        if (hit) score--;
     }
 }
 
 static void oct_show(void) {
+    uint8_t prev_page = pico_bank_page_in(PICODIVER_SPRITE_PHYSICAL_PAGE);
     pico_spr(11, oct_x, 32, 1, 1, 0, 0);
     pico_spr(oct_t, oct_x, 40, 1, 1, 0, 0);
+    pico_bank_page_out(prev_page);
     /* Two SEPARATE dirty rects (head 8x8 at y=32, tentacle 8x8 at y=40),
      * not one combined 8x16 -- the combined version (matching the
      * original's own track_rect(&prev_oct[buf_idx], oct_x, 32, 8, 16))
@@ -654,21 +666,32 @@ static void centre_print(const char *s, uint8_t y, uint8_t color) {
 static void ship_show(void) {
     uint8_t r, c;
     uint8_t prev_page;
+    /* Both picodiver_map_data AND picodiver_sprite_data are banked now
+     * (docs/picodiver-notes.md's "Stack/BSS collision" section) -- and,
+     * unlike before, they CAN'T both be paged in at once (one shared
+     * window, one physical page at a time). This loop used to read a
+     * tile id and immediately pico_spr() it in the same iteration; now
+     * it buffers all 4*SCREEN_W/8 tile ids first (one page-in/out pair
+     * for the map read), then pages in the sprite data separately for
+     * the actual drawing pass -- two sequential page visits instead of
+     * one page holding both. */
+    uint8_t tiles[4][SCREEN_W / 8];
     pico_cls_rect(0, 0, SCREEN_W - 1, 31, 2);
     /* 32 tile columns now (SCREEN_W/8), not the original 16 -- source
      * data only has 16 real columns (Stage 8's own reading of
      * picodiver_map_data), so c%16 wraps it to repeat twice across the
      * wider banner, same "it's a tileable pattern" reasoning as the
-     * ocean's own extension below. picodiver_map_data is banked
-     * (picodiver_data.h's own comment) -- paged in for this whole loop,
-     * not per-cell, since every read in it is from the same page; the
-     * interleaved pico_spr() calls are unaffected (picodiver_sprite_data
-     * stays resident, a completely different address range from the
-     * banked window). */
+     * ocean's own extension below. */
     prev_page = pico_bank_page_in(PICODIVER_MAP_PHYSICAL_PAGE);
+    for (r = 0; r < 4; r++)
+        for (c = 0; c < SCREEN_W / 8; c++)
+            tiles[r][c] = picodiver_map_data[(uint16_t)r * PICODIVER_MAP_W + (c % 16)];
+    pico_bank_page_out(prev_page);
+
+    prev_page = pico_bank_page_in(PICODIVER_SPRITE_PHYSICAL_PAGE);
     for (r = 0; r < 4; r++) {
         for (c = 0; c < SCREEN_W / 8; c++) {
-            uint8_t tile = picodiver_map_data[(uint16_t)r * PICODIVER_MAP_W + (c % 16)];
+            uint8_t tile = tiles[r][c];
             uint8_t screen_x = (uint8_t)(((uint16_t)c * 8 + (uint16_t)sx) % SCREEN_W);
             if (tile != 0 && tile != 9) pico_spr(tile, screen_x, (int16_t)(r * 8), 1, 1, 0, 0);
         }
@@ -941,12 +964,14 @@ int main(void) {
                 hud_redraw_left = 2;
             }
             if (hud_redraw_left > 0) {
+                uint8_t prev_page = pico_bank_page_in(PICODIVER_SPRITE_PHYSICAL_PAGE);
                 pico_cls_rect(0, 0, SCREEN_W - 1, 7, 0);
                 for (i = 1; i <= cab_oxy; i++) pico_spr(51, (int16_t)((i * 8) - 8), 0, 1, 1, 0, 0);
                 /* Anchored to the right EDGE (SCREEN_W), not the old
                  * canvas's own width (128) -- that would now sit in the
                  * middle of the wider screen instead of the corner. */
                 for (i = 1; i <= cab_life; i++) pico_spr(32, (int16_t)(SCREEN_W - (i * 8)), 0, 1, 1, 0, 0);
+                pico_bank_page_out(prev_page);
                 hud_redraw_left--;
             }
             if ((int16_t)score != hud_last_score) {

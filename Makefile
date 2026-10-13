@@ -141,8 +141,16 @@ ESXDOS_LIB :=
 # PICODIVER_MAP_PHYSICAL_PAGE comment. Recovers 2048 bytes, comfortably
 # clearing the 669-byte overflow this build hit once pico_hwsprite.c
 # alone wasn't enough.
-BANKED_CSRCS := picodiver_map_data
+# picodiver_data.c (the 8192-byte sprite sheet) banked too (2026-10-13)
+# -- see docs/picodiver-notes.md's "Stack/BSS collision" section: a live
+# ZRCP register read confirmed SP regularly dipping into static BSS data
+# (prev_oct_head/prev_oct_body) during completely normal play, corrupting
+# the dirty-rect erase tracking (the "tentacle trail" bug's real cause,
+# not a logic regression). Freeing this one file's 8192 resident bytes
+# gives the stack real headroom instead of chasing the symptom.
+BANKED_CSRCS := picodiver_map_data picodiver_data
 CBANK_picodiver_map_data := 8
+CBANK_picodiver_data := 12
 # Real background music (docs/music-notes.md) -- the vendored, banked
 # Arkos player + sailing_by_song.asm share physical page 14 (confirmed
 # clear of Layer 2's 18-29 range, distinct from page 8 above).

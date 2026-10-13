@@ -8,6 +8,23 @@ call site).
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-10-13
+
+### Fixed
+- The octopus "trail" bug (previously fixed by splitting its dirty-rect
+  tracking) came back after the music work above -- turned out to be a
+  real stack/BSS collision, not a logic regression. A live ZRCP register
+  poll during ordinary play showed `SP` regularly dipping into
+  `prev_oct_head`/`prev_oct_body`'s own memory (confirmed pre-existing,
+  not caused by the music change, by re-measuring the prior commit).
+  Fixed by banking `picodiver_sprite_data` (8192 bytes, exactly the
+  single-page ceiling) the same way `picodiver_map_data` already is --
+  `pico_spr_init()` only stores the pointer, so no library changes were
+  needed, just a `pico_bank_page_in()`/`page_out()` pair around every
+  `pico_spr()`/`pico_spr_collide()` call site. `BSS_END_tail` dropped
+  from `$FF84` to `$E0C6` (~150 bytes of margin to ~8000). See
+  `docs/picodiver-notes.md`'s "Stack/BSS collision" section.
+
 ## [0.8.0] - 2026-10-13
 
 ### Added

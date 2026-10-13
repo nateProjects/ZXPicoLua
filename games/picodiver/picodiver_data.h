@@ -26,6 +26,18 @@
  * entirely for the same reason. */
 #define PICODIVER_SHEET_W 128
 #define PICODIVER_SHEET_H 64
+/* Banked (2026-10-13) -- see docs/picodiver-notes.md's "Stack/BSS
+ * collision" section. 128*64 = 8192 bytes, exactly the single-page
+ * ceiling lib/pico_bank.h documents, so one physical page is enough
+ * (no multi-page sheet-splitting needed). Valid only while
+ * PICODIVER_SPRITE_PHYSICAL_PAGE is paged in -- EVERY pico_spr()/
+ * pico_sspr()/pico_sget()/pico_sset()/pico_spr_collide() call site in
+ * main.c needs its own pico_bank_page_in()/page_out() pair around it
+ * (pico_spr_init() itself does NOT -- it only stores the pointer value,
+ * never dereferences it, confirmed by reading lib/pico_sprite.c). Page
+ * 12 picked: distinct from page 8 (map data) and 14 (music), all three
+ * confirmed clear of Layer 2's 18-29 range. */
+#define PICODIVER_SPRITE_PHYSICAL_PAGE 12
 extern const uint8_t picodiver_sprite_data[PICODIVER_SHEET_W * PICODIVER_SHEET_H];
 
 /* Truncated to 16 rows (of the original cart's 32) for the same reason as
