@@ -175,4 +175,8 @@ pico_fix_t pico_fix_mul(pico_fix_t a, pico_fix_t b);
  * (e.g. PICO_FIX_FRAC(325,1000) for the original's 0.325). */
 pico_fix_t pico_fix_lerp(pico_fix_t pos, pico_fix_t tar, pico_fix_t perc);
 
+/* sin(x)/cos(x) are declared in pico_trig.h, a SEPARATE opt-in module,
+ * not here -- see that header's own top comment for why (real, measured
+ * resident cost, same reasoning as pico_music.c/pico_sfx_synth.c). */
+
 #endif

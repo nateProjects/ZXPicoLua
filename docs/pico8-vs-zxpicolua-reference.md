@@ -177,7 +177,8 @@ a worked example, and `docs/hwsprite-notes.md` for the mechanism.
 | `chr(code)` | `pico_chr(code, out)` | single-code only, no `chr(97,98,99)` multi-arg form |
 | `ord(s,[index])` | `pico_ord(s, index)` | `index` defaults to 1, not omittable -- pass `1` explicitly |
 | `time()` / `t()` | `pico_tick()` (call once/frame) + `pico_time()` (read) | a raw tick counter, not fractional seconds -- re-tune any `% n` divisor against the Next's real tick rate |
-| `sin/cos/atan2` | -- | not implemented; no reference cart has needed trig yet (would need a real fixed-point lookup table) |
+| `sin(x)`/`cos(x)` | `pico_sin(x)`/`pico_cos(x)` (`lib/pico_trig.h`, opt-in) | same Pico-8 convention exactly -- `x` in TURNS not radians, and `sin()` is NEGATED relative to standard math (`sin(0.25)` is `-1`, confirmed against the real manual, not assumed); 256-entry lookup table, ~1.4 degree resolution |
+| `atan2` | -- | not implemented; no reference cart has needed it yet |
 | (Lua tables: `add/del/deli/all/foreach/pairs`) | -- | **not a library gap** -- this is a porting-methodology decision, not a missing function: translate a Lua object pool into a fixed-size C array (`objs[MAX_OBJS]`) with swap-with-last removal, per pool, the way `games/picodiver/main.c`'s own `obj_remove()` does it. See the project plan's own note on this. |
 
 ```lua

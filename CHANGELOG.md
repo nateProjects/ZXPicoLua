@@ -8,6 +8,19 @@ call site).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-13
+
+### Added
+- `pico_sin()`/`pico_cos()` (`lib/pico_trig.h`, opt-in) — Pico-8's exact
+  trig convention (turns, not radians; `sin()` negated relative to
+  standard math, confirmed against the real manual). 256-entry lookup
+  table, generated programmatically. Verified via a native host harness
+  (10 cases) and a real on-device screenshot (`games/fixedtest/`, now
+  9 checks total). Split into its own opt-in module after the table
+  alone tipped picodiver's already razor-thin resident margin (263
+  bytes) over by 348 bytes when tried unconditionally — same reasoning
+  as `pico_music.c`/`pico_sfx_synth.c`.
+
 ## [0.6.0] - 2026-10-13
 
 ### Added

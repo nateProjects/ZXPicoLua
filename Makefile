@@ -20,24 +20,30 @@ BUILD_DIR  := build/$(GAME)
 SDCARD_DIR := sdcard
 TARGET     := $(BUILD_DIR)/$(GAME)
 
-# pico_music.c (Arkos Tracker 2 playback, lib/pico_music.h) and
+# pico_music.c (Arkos Tracker 2 playback, lib/pico_music.h),
 # pico_sfx_synth.c (the automated Pico-8-sfx-to-AY synth, lib/
-# pico_sfx_synth.h) are both opt-IN, not wildcarded in by default like
-# every other lib/*.c module -- linking against either unconditionally
-# pulls in real resident code even for a game that never calls a single
-# function from it, since the linker only sees "this object references
-# ply_akg_*/psg_*", not "and nothing ever calls it". Confirmed the hard
-# way for both (2026-10-12/13): adding pico_music.c alone took picodiver
-# from 14336 free bytes to a large overflow (z88dk's bundled Arkos player
-# is ~2200 lines of heavily-unrolled AY-trick asm); pico_sfx_synth.c's own
-# code is much smaller (~1KB) but the <psg.h> library functions it pulls
-# in (psg_tone/psg_volume/psg_channels/psg_noise/psg_init) still tipped
-# the same already-tight build over by 707 bytes. A game that actually
-# wants music/sfx adds whichever module(s) it needs to its own SRCS
-# explicitly in its own ifeq block below (none do yet -- no real Arkos
+# pico_sfx_synth.h), and pico_trig.c (sin()/cos(), lib/pico_trig.h) are
+# all opt-IN, not wildcarded in by default like every other lib/*.c
+# module -- linking against any of them unconditionally pulls in real
+# resident code/data even for a game that never calls a single function
+# from it, since the linker only sees "this object references
+# ply_akg_*/psg_*/cos_table", not "and nothing ever calls it". Confirmed
+# the hard way for all three (2026-10-12/13): adding pico_music.c alone
+# took picodiver from 14336 free bytes to a large overflow (z88dk's
+# bundled Arkos player is ~2200 lines of heavily-unrolled AY-trick asm);
+# pico_sfx_synth.c's own code is much smaller (~1KB) but the <psg.h>
+# library functions it pulls in (psg_tone/psg_volume/psg_channels/
+# psg_noise/psg_init) still tipped the same already-tight build over by
+# 707 bytes; pico_trig.c's 512-byte lookup table plus its own small
+# functions (611 bytes total) tipped picodiver's actual main-resident
+# margin -- a razor-thin 263 bytes, confirmed directly via __BSS_END_tail
+# before/after, unrelated to the "free bytes" figures above -- over by
+# 348 bytes. A game that actually wants music/sfx/trig adds whichever
+# module(s) it needs to its own SRCS explicitly in its own ifeq block
+# below (fixedtest is pico_trig.c's own first user; no real Arkos
 # content has been authored for this project; games/sfxtest/ is the only
 # pico_sfx_synth.c user so far), same opt-in spirit as BANKED_CSRCS.
-LIB_SRCS := $(filter-out $(LIB_DIR)/pico_music.c $(LIB_DIR)/pico_sfx_synth.c,$(wildcard $(LIB_DIR)/*.c))
+LIB_SRCS := $(filter-out $(LIB_DIR)/pico_music.c $(LIB_DIR)/pico_sfx_synth.c $(LIB_DIR)/pico_trig.c,$(wildcard $(LIB_DIR)/*.c))
 # pico_mul_z80n.asm (2026-10-12): hardware-mul override for classic
 # clib's own generic l_mult/l_mult_u/l_mult_0 -- see that file's own
 # top comment. Passed as a raw source alongside LIB_SRCS so it links
@@ -131,6 +137,12 @@ else ifeq ($(GAME),sfxtest)
 # tools/p8_sfx_to_c.py, actually reaches the AY chip. See
 # docs/sfx-convert-notes.md.
 LIB_SRCS += $(LIB_DIR)/pico_sfx_synth.c
+ESXDOS_LIB := -lesxdos
+else ifeq ($(GAME),fixedtest)
+# Opts into pico_trig.c (also excluded by default -- see the same
+# LIB_SRCS comment) to test pico_sin()/pico_cos() alongside this game's
+# own existing pico_fix_* checks.
+LIB_SRCS += $(LIB_DIR)/pico_trig.c
 ESXDOS_LIB := -lesxdos
 else
 ESXDOS_LIB := -lesxdos

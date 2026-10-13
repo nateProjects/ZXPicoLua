@@ -6,7 +6,7 @@ See [`docs/pico8-vs-zxpicolua-reference.md`](docs/pico8-vs-zxpicolua-reference.m
 
 ## Status
 
-Current version: **0.6.0** (pre-1.0, see [CHANGELOG.md](CHANGELOG.md) — [Semantic Versioning](https://semver.org/), no API-stability guarantee yet).
+Current version: **0.7.0** (pre-1.0, see [CHANGELOG.md](CHANGELOG.md) — [Semantic Versioning](https://semver.org/), no API-stability guarantee yet).
 
 The core API is complete: Layer 2 framebuffer access, shape/text primitives, software sprites, keyboard input, math/RNG, tile maps, persistent storage (esxDOS), a hardware tilemap background, and hardware sprites. [PicoDiver](games/picodiver/) is the primary example — a full playable game ported end to end (title screen, gameplay, collision, HUD, scrolling background), not a demo.
 
@@ -23,7 +23,7 @@ make GAME=picodiver run  # builds and launches it in ZEsarUX
 make clean-all           # removes all build/ output
 ```
 
-Each game lives in its own directory under `games/`, always linked against the shared `lib/`. `games/picodiver/` is the real, worked example; `games/demo/`, `games/fixedtest/`, `games/hwspike/`, `games/speedtest/`, `games/bankcalltest/`, `games/musictest/`, `games/sfxtest/`, and `games/cliptest/` are smaller milestone/scratch tests kept for reference, not polished examples.
+Each game lives in its own directory under `games/`, always linked against the shared `lib/`. `games/picodiver/` is the real, worked example; `games/demo/`, `games/fixedtest/` (now also the `pico_sin`/`pico_cos` test bed), `games/hwspike/`, `games/speedtest/`, `games/bankcalltest/`, `games/musictest/`, `games/sfxtest/`, and `games/cliptest/` are smaller milestone/scratch tests kept for reference, not polished examples.
 
 ## Tools
 
@@ -41,6 +41,7 @@ Each game lives in its own directory under `games/`, always linked against the s
 | `pico_hwsprite` | Next hardware sprites — a separate compositing layer with no erase/redraw bookkeeping |
 | `pico_input` | Keyboard-matrix button input (`btn`/`btnp`) |
 | `pico_math` | Math/bitwise helpers, seeded RNG, strings, Q16.16 fixed-point |
+| `pico_trig` | `sin`/`cos` via a 256-entry lookup table (opt-in — real resident cost) |
 | `pico_map` | Software tile map (`mget`/`mset`/`map`), precomputed collision masks (`pico_map_build_colmask`/`pico_colbox_at`) |
 | `pico_music` | Music/sfx playback via Arkos Tracker 2 (opt-in — see [`docs/music-notes.md`](docs/music-notes.md)) |
 | `pico_sfx_synth` | Automated Pico-8-sfx-to-AY playback (opt-in — see [`docs/sfx-convert-notes.md`](docs/sfx-convert-notes.md)) |

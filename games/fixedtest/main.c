@@ -1,9 +1,12 @@
-/* Standalone test for lib/pico_math's new Q16.16 fixed-point functions
- * (pico_fix_mul/pico_fix_lerp), added for the Islander port's movement
- * physics. Tested here in isolation, not inside Islander's own loop, per
- * this project's own testing discipline. Self-checking: each case compares
- * against a hand-computed expected value with a small tolerance (integer
- * division in PICO_FIX_FRAC means exact equality isn't always possible)
+/* Standalone test for lib/pico_math's Q16.16 fixed-point functions
+ * (pico_fix_mul/pico_fix_lerp, added for the Islander port's movement
+ * physics; pico_sin/pico_cos, added later). Tested here in isolation, not
+ * inside a real game's own loop, per this project's own testing
+ * discipline. Self-checking: each case compares against a hand-computed
+ * (and, for sin/cos, separately Python-cross-checked -- see
+ * lib/pico_trig.c's own top comment) expected value with a small
+ * tolerance (integer division in PICO_FIX_FRAC, and the sin/cos table's
+ * own 256-step quantization, mean exact equality isn't always possible)
  * and prints PASS/FAIL, verified via one ZRCP screenshot -- no simulated
  * input needed, so none of the usual input-automation pitfalls apply
  * here. */
@@ -13,6 +16,7 @@
 #include "pico_video.h"
 #include "pico_gfx.h"
 #include "pico_math.h"
+#include "pico_trig.h"
 
 static uint8_t pass_count, fail_count, row;
 
@@ -77,6 +81,16 @@ static void draw_all(void) {
         }
         check("accel 10x0.1->~1", hs, PICO_FIX_INT(1), 50);
     }
+
+    /* sin()/cos(): Pico-8's own distinctive convention -- turns, not
+     * radians, and sin() NEGATED relative to standard math (confirmed
+     * against the real manual, not assumed). cos() is a plain check;
+     * sin(0.25)=-1 (not +1!) is the one that actually catches a wrong
+     * sign if the inversion were ever dropped by a future edit. */
+    check("cos(0)=1", pico_cos(PICO_FIX_INT(0)), PICO_FIX_INT(1), 1000);
+    check("cos(.5)=-1", pico_cos(PICO_FIX_FRAC(1, 2)), -PICO_FIX_INT(1), 1000);
+    check("sin(.25)=-1 (p8 inv)", pico_sin(PICO_FIX_FRAC(1, 4)), -PICO_FIX_INT(1), 1000);
+    check("sin(.75)=1 (p8 inv)", pico_sin(PICO_FIX_FRAC(3, 4)), PICO_FIX_INT(1), 1000);
 
     {
         char summary[24];
