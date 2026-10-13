@@ -109,4 +109,19 @@ void pico_print_at_cursor(const char *text, uint8_t color);
  * maps to a given screen pixel, it doesn't change the canvas size. */
 void pico_camera(int16_t x, int16_t y);
 
+/* clip(x0, y0, x1, y1) -- restricts every subsequent drawing call in THIS
+ * file to the rectangle (x0,y0)-(x1,y1) inclusive, screen (post-camera)
+ * coordinates -- same scope as camera() just above (pico_gfx.c's own
+ * shape/text primitives only, NOT pico_sprite.c's spr()/sspr() and NOT
+ * pico_video.c's raw pset()/pget()/cls(), for the same hot-path-
+ * preservation reasoning). Matches Pico-8's own clip(x,y,w,h) in EFFECT,
+ * not signature -- this takes inclusive corners (x1,y1), like every other
+ * two-corner primitive in this file (pico_rect(), pico_line()'s bounding
+ * box), rather than a width/height pair, so a call translated from Pico-8's
+ * own `clip(x,y,w,h)` becomes `pico_clip(x, y, x+w-1, y+h-1)` at the call
+ * site. Unlike Pico-8's own clip(), there is no implicit-reset-on-empty-
+ * args form -- call pico_clip_reset() explicitly instead. */
+void pico_clip(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1);
+void pico_clip_reset(void);
+
 #endif

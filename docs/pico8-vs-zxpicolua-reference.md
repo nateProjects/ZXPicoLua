@@ -79,6 +79,7 @@ if (pico_btn(PICO_BTN_LEFT)) { cab_dr = 0; cab_x = (int16_t)(cab_x - 1 * PICO_SP
 | `oval`/`ovalfill` | `pico_oval`/`pico_ovalfill` | explicit `c` only; args are the bounding box, same as Pico-8 |
 | `fillp(pattern)` | `pico_fillp(pattern, transparent)` | the fractional/transparent trick (`fillp(p + 0x0.8)`) is its own explicit bool argument instead |
 | `camera(x,y)` | `pico_camera(x,y)` | offsets `pico_gfx.c`'s shapes/text only -- not sprites, not raw pset/cls (see `lib/pico_gfx.h`) |
+| `clip(x,y,w,h)` | `pico_clip(x0,y0,x1,y1)` | inclusive corners, not width/height -- `clip(x,y,w,h)` becomes `pico_clip(x,y,x+w-1,y+h-1)`; same `pico_gfx.c`-only scope as `camera()`; no implicit reset-on-empty-args, call `pico_clip_reset()` |
 | `cursor(x,y)` | `pico_cursor(x,y)` | |
 | `print(s,[x,y,c])` | `pico_print(s,x,y,c)` **or** `pico_print_at_cursor(s,c)` | Lua's argument-count overloading splits into two named functions |
 
@@ -111,7 +112,7 @@ void centre_print(const char *s, uint8_t y) {
 | `spr(n,x,y,[w,h,flip_x,flip_y])` | `pico_spr(n,x,y,w,h,flip_x,flip_y)` | every arg explicit |
 | `sspr(sx,sy,sw,sh,dx,dy,[dw,dh,flip_x,flip_y])` | `pico_sspr(sx,sy,sw,sh,dx,dy,dw,dh,flip_x,flip_y)` | |
 | `sget(x,y)` | `pico_sget(x,y)` | reads the sheet, not the screen |
-| `sset(x,y,[c])` | -- | not implemented, no reference cart writes to its own sheet at runtime |
+| `sset(x,y,[c])` | `pico_sset(x,y,c)` | explicit `c` only; requires the sheet registered via `pico_spr_init()` to be genuinely mutable storage, not a `static const` array -- see `pico_sprite.h`'s own caveat |
 | `fget(n,[f])` / `fset(n,f,[v])` | `pico_fget(n,f)`/`pico_fset(n,f,v)` (one flag) or `pico_fget_all`/`pico_fset_all` (whole byte) | split like the colour-argument functions, for the same reason |
 | `palt(c,[t])` | `pico_palt(c,t)` | multi-colour transparency, matches real Pico-8 |
 | `pal(c0,c1,[p])` | `pico_pal(c0,c1)` / `pico_pal_reset()` | no `p=1` "screen palette" mode |

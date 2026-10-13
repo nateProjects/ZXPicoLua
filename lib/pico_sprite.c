@@ -142,6 +142,14 @@ uint8_t pico_sget(uint8_t x, uint8_t y) {
     return sheet_pixel(x, y);
 }
 
+void pico_sset(uint8_t x, uint8_t y, uint8_t color) {
+    if (!sheet || x >= sheet_w || y >= sheet_h) return;
+    /* See pico_sprite.h's own caveat -- well-defined only if the sheet
+     * this game registered via pico_spr_init() is itself genuinely
+     * mutable storage. */
+    ((uint8_t *)sheet)[(uint16_t)y * sheet_w + x] = color;
+}
+
 uint8_t pico_spr_collide(uint8_t n1, int16_t x1, int16_t y1, uint8_t w1, uint8_t h1,
                           uint8_t n2, int16_t x2, int16_t y2, uint8_t w2, uint8_t h2) {
     uint16_t cells_per_row;

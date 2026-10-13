@@ -6,7 +6,7 @@ See [`docs/pico8-vs-zxpicolua-reference.md`](docs/pico8-vs-zxpicolua-reference.m
 
 ## Status
 
-Current version: **0.5.0** (pre-1.0, see [CHANGELOG.md](CHANGELOG.md) — [Semantic Versioning](https://semver.org/), no API-stability guarantee yet).
+Current version: **0.6.0** (pre-1.0, see [CHANGELOG.md](CHANGELOG.md) — [Semantic Versioning](https://semver.org/), no API-stability guarantee yet).
 
 The core API is complete: Layer 2 framebuffer access, shape/text primitives, software sprites, keyboard input, math/RNG, tile maps, persistent storage (esxDOS), a hardware tilemap background, and hardware sprites. [PicoDiver](games/picodiver/) is the primary example — a full playable game ported end to end (title screen, gameplay, collision, HUD, scrolling background), not a demo.
 
@@ -23,7 +23,7 @@ make GAME=picodiver run  # builds and launches it in ZEsarUX
 make clean-all           # removes all build/ output
 ```
 
-Each game lives in its own directory under `games/`, always linked against the shared `lib/`. `games/picodiver/` is the real, worked example; `games/demo/`, `games/fixedtest/`, `games/hwspike/`, `games/speedtest/`, `games/bankcalltest/`, `games/musictest/`, and `games/sfxtest/` are smaller milestone/scratch tests kept for reference, not polished examples.
+Each game lives in its own directory under `games/`, always linked against the shared `lib/`. `games/picodiver/` is the real, worked example; `games/demo/`, `games/fixedtest/`, `games/hwspike/`, `games/speedtest/`, `games/bankcalltest/`, `games/musictest/`, `games/sfxtest/`, and `games/cliptest/` are smaller milestone/scratch tests kept for reference, not polished examples.
 
 ## Tools
 
@@ -35,8 +35,8 @@ Each game lives in its own directory under `games/`, always linked against the s
 | Module | Covers |
 |---|---|
 | `pico_video` | Layer 2 framebuffer, logical canvas, double buffering (`pico_flip`), palette remap |
-| `pico_gfx` | Shape/text primitives (`rect`, `circ`, `oval`, `print`, `camera`) |
-| `pico_sprite` | Software sprite blitting (`spr`/`sspr`), pixel-perfect collision |
+| `pico_gfx` | Shape/text primitives (`rect`, `circ`, `oval`, `print`, `camera`, `clip`) |
+| `pico_sprite` | Software sprite blitting (`spr`/`sspr`), pixel-perfect collision, sheet read/write (`sget`/`sset`) |
 | `pico_tilemap` | Hardware tilemap background — zero per-frame cost, for a static/scrolling world too big to redraw every frame |
 | `pico_hwsprite` | Next hardware sprites — a separate compositing layer with no erase/redraw bookkeeping |
 | `pico_input` | Keyboard-matrix button input (`btn`/`btnp`) |

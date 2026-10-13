@@ -8,6 +8,18 @@ call site).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-13
+
+### Added
+- `pico_clip()`/`pico_clip_reset()` (`pico_gfx.h`) — restricts drawing to
+  a rectangle, same scope as `pico_camera()` (shape/text primitives
+  only). Verified via a native clip-math harness (10 cases) and a real
+  on-device screenshot (`games/cliptest/`).
+- `pico_sset()` (`pico_sprite.h`) — writes a sprite-sheet pixel, `sget()`'s
+  write counterpart. Requires the registered sheet to be genuinely
+  mutable storage (documented caveat). Verified via `games/cliptest/`'s
+  own `sset()`/`sget()` round-trip.
+
 ## [0.5.0] - 2026-10-13
 
 ### Added

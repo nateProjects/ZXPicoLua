@@ -69,6 +69,36 @@ void pico_camera(int16_t x, int16_t y) {
     camera_y = y;
 }
 
+/* --- clip() state -----------------------------------------------------
+ *
+ * Same scope as camera() just above, for the same reason: applied inside
+ * pset_safe()/fill_run()/draw_glyph()'s own call site, not pico_sprite.c's
+ * spr()/sspr() or pico_video.c's raw pset/cls -- no reference game needs
+ * sprite/raw-pset clipping narrower than the logical canvas yet, and this
+ * stays a cheap intersection against bounds pset_safe()/fill_run() were
+ * already computing for the screen-edge case, not a new per-pixel cost.
+ * Defaults (INT16_MAX bounds) make every check below a no-op until a game
+ * actually calls pico_clip() -- the existing screen-edge clipping is
+ * untouched either way, this ANDs a second, narrower rectangle on top. */
+static int16_t clip_x0 = 0;
+static int16_t clip_y0 = 0;
+static int16_t clip_x1 = 32767; /* INT16_MAX -- avoids pulling in <stdint.h>'s own macro for one constant */
+static int16_t clip_y1 = 32767;
+
+void pico_clip(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1) {
+    clip_x0 = x0;
+    clip_y0 = y0;
+    clip_x1 = x1;
+    clip_y1 = y1;
+}
+
+void pico_clip_reset(void) {
+    clip_x0 = 0;
+    clip_y0 = 0;
+    clip_x1 = 32767;
+    clip_y1 = 32767;
+}
+
 /* --- bounds-checked plotting ---------------------------------------------
  *
  * pico_pset()/pico_pget() (pico_video.h) take unchecked uint8_t coordinates
@@ -88,6 +118,7 @@ static void pset_safe(int16_t x, int16_t y, uint8_t color) {
     x -= camera_x;
     y -= camera_y;
     if (x < 0 || y < 0 || x >= (int16_t)pico_screen_w || y >= (int16_t)pico_screen_h) return;
+    if (x < clip_x0 || y < clip_y0 || x > clip_x1 || y > clip_y1) return;
     pico_pset((uint8_t)x, (uint8_t)y, color);
 }
 
@@ -102,8 +133,11 @@ static void fill_run(int16_t x0, int16_t x1, int16_t y, uint8_t primary, uint8_t
     y -= camera_y;
     if (x1 < x0) { t = x0; x0 = x1; x1 = t; }
     if (y < 0 || y >= (int16_t)pico_screen_h) return;
+    if (y < clip_y0 || y > clip_y1) return;
     if (x0 < 0) x0 = 0;
     if (x1 >= (int16_t)pico_screen_w) x1 = (int16_t)pico_screen_w - 1;
+    if (x0 < clip_x0) x0 = clip_x0;
+    if (x1 > clip_x1) x1 = clip_x1;
     if (x0 > x1) return; /* fully clipped away */
 
     x = (uint8_t)x0;
@@ -367,11 +401,13 @@ static void draw_glyph(uint8_t ch, int16_t px, int16_t py, uint8_t remapped_colo
     for (row = 0; row < PICO_FONT_CELL_H; row++) {
         int16_t py_row = py + (int16_t)row;
         if (py_row < 0 || py_row >= (int16_t)pico_screen_h) continue;
+        if (py_row < clip_y0 || py_row > clip_y1) continue;
         bits = rows[row];
         for (col = 0; col < PICO_FONT_CELL_W; col++) {
             int16_t px_col = px + (int16_t)col;
             if ((bits >> (PICO_FONT_CELL_W - 1 - col)) & 1 &&
-                px_col >= 0 && px_col < (int16_t)pico_screen_w) {
+                px_col >= 0 && px_col < (int16_t)pico_screen_w &&
+                px_col >= clip_x0 && px_col <= clip_x1) {
                 *pico_video_batch_row((uint8_t)px_col, (uint8_t)py_row) = remapped_color;
             }
         }

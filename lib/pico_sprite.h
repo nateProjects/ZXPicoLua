@@ -61,6 +61,27 @@ void pico_sspr(uint8_t sx, uint8_t sy, uint8_t sw, uint8_t sh,
  * out-of-range coordinates return 0, matching PicoJS's own picoJS.sget. */
 uint8_t pico_sget(uint8_t x, uint8_t y);
 
+/* sset(x, y, color) -- writes a single pixel's colour index directly into
+ * the registered spritesheet -- sget()'s write counterpart. Out-of-range
+ * coordinates are silently ignored, same convention as pico_mset()/
+ * pico_sget(). No reference game needs runtime sheet edits yet (added for
+ * API completeness, matching Pico-8's own sget/sset pairing), so this
+ * hasn't been exercised in anger -- same caveat pico_fillp()'s own
+ * deliberately-cut p=1 screen-palette mode carries, a real gap only if a
+ * future port actually calls it.
+ *
+ * CAVEAT: pico_spr_init()'s own sheet_data parameter is `const uint8_t *`
+ * (every drawing primitive only ever reads it) -- this function writes
+ * through that pointer anyway (cast away const internally), which is only
+ * well-defined if the array a game actually passed to pico_spr_init() is
+ * itself genuinely mutable storage (a plain `uint8_t sheet[...]`, not a
+ * `static const uint8_t sheet[...] = {...}` array actually placed in a
+ * read-only/shared section) -- calling pico_sset() against a sheet
+ * registered from truly const storage is undefined behaviour in C, even
+ * though nothing on this platform currently enforces real write
+ * protection at the hardware level. */
+void pico_sset(uint8_t x, uint8_t y, uint8_t color);
+
 /* Pixel-perfect collision between two sprite-sheet cells placed on
  * screen, dw817's method (pico_sget()'s own comment) -- the same
  * algorithm the original Pico-8 cart and PicoJS's own port used, not
