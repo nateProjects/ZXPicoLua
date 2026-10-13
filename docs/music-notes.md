@@ -127,20 +127,112 @@ track is their own work, not something to ship inside a general-purpose
 library's own test suite. `tools/arkos_song_to_asm.py` itself (the
 reusable converter) IS committed; no copyrighted content is.
 
+## Real music, really wired into PicoDiver (2026-10-13) -- the player had to be vendored and banked after all
+
+The user supplied their own original composition, `games/picodiver/
+sailing-by.aks`, explicitly to become picodiver's real background music --
+unlike every other audio content this project touched (celeste.p8's sfx
+data, "Lop Ears"), this one IS the user's own IP, explicitly committed, and
+explicitly meant for real use. Converting it via `tools/arkos_song_to_asm.py`
+worked exactly as it did against the earlier test track (same tool, same
+pipeline, no new tooling gaps) -- but linking it exposed a real,
+previously-undocumented complication:
+
+**The player alone overflows picodiver's resident budget by 3099 bytes --
+with ZERO song data loaded.** Measured directly: a standalone link combining
+picodiver's existing code/data with `pico_music.c` (and nothing else new)
+failed with `Section exceeds 64k [0x8000,0x10c1b]` (0x10c1b - 0x10000 =
+3099). Adding the song on top pushed the overflow to 4933 bytes -- so the
+song data itself only accounts for ~1834 of that. Banking just the song
+(the mechanism every other banked module here uses) would NOT have been
+enough; the player itself needed to come off the resident budget too, and
+the section above's own "no vendoring needed" conclusion doesn't survive
+this: **you only need to vendor the player once you need to BANK it.**
+`pico_music.c`'s `<psg/arkos.h>` route pulls the player from z88dk's own
+prebuilt classic-clib library archive the instant anything references
+`ply_akg_*` -- not a file this project compiles itself, so the existing
+`PAGE_<n>_<name>` banking trick (which works by compiling one of OUR OWN
+`.c` files fresh to `.asm`, then section-renaming it) doesn't apply to it.
+
+**Fix: vendor the player, bank it alongside the song, same physical page**
+-- the same approach David Crespo's CelesteNext took for this exact
+problem (confirmed by reading `CelesteNext-main/zxnext/music_player.asm`):
+
+- `lib/pico_music_player.asm` -- the raw player
+  (`asm_arkos_zx_smc.asm`), copied verbatim from z88dk's own tree, now a
+  file THIS project compiles/links itself. Its own `section smc_sound_ay`
+  line is removed (it's concatenated into a shared page, not assembled
+  standalone) and three small C-callable entry trampolines are added
+  directly in it (`_pico_music_banked_init_asm`/`_play_asm`/`_stop_asm`,
+  `__z88dk_callee` convention, same register marshalling z88dk's own
+  `ply_akg_init.asm` stub uses) so `lib/pico_music_banked.c` can call into
+  it with an ordinary C call once paged in -- the same proven shape
+  `docs/bank-call-notes.md` established for banked CODE in general.
+- **Player + song share ONE physical page, not two sequential ones.**
+  Unlike `BANKED_CSRCS` (page in, call, page out -- a module that's
+  self-contained), the player needs its song's bytes mapped into memory
+  *while it's running*, not just reachable beforehand -- a genuinely
+  different relationship. The Makefile's new `BANKED_MUSIC_SONG`/
+  `BANKED_MUSIC_PAGE` mechanism concatenates the vendored player and a
+  game's song `.asm` (`tools/arkos_song_to_asm.py`'s output) into a single
+  `build/<game>/music_bank.asm`, one shared `SECTION PAGE_<n>_music_bank`/
+  `ORG $2000` header. Measured combined size (~4933 bytes) fits
+  comfortably inside `lib/pico_bank.h`'s documented 8192-byte single-page
+  ceiling, with ~3.2KB left over for a second short song or sfx data later.
+- `lib/pico_music_banked.h`/`.c` -- the opt-in API for this path
+  (`pico_music_banked_init(page, song, subsong)`/
+  `pico_music_banked_play_frame(page)`/`pico_music_banked_stop(page)`),
+  each wrapping `pico_bank_page_in()`/`page_out()` internally around one
+  call into the vendored player's trampolines -- the caller doesn't do its
+  own page-in/out (unlike the unbanked `pico_music.c`'s own doc comment,
+  written before this was built, which assumed the caller would).
+- Picked physical page 14 for picodiver (confirmed clear of Layer 2's
+  18-29 range, distinct from page 8's existing `picodiver_map_data`).
+
+**Result**: picodiver links clean with real music wired in end to end
+(`pico_music_banked_init()` once after `titleinit()`,
+`pico_music_banked_play_frame()` once per frame) -- `__BSS_END_tail` at
+`$FF6A`, i.e. 150 bytes of resident margin left. Razor-thin, same
+"measure, don't assume" territory as every other picodiver budget fight
+this project has had, but real. Verified via a `zesarux --aofile` capture:
+real AY waveform oscillation (not a frozen/dead register), including a
+boot-silence gap before playback starts and a later low-amplitude passage
+that's a genuine amplitude dip (confirmed by inspecting the raw bytes --
+oscillating 0x3e-0x42, not a constant value) rather than a crash. Whether
+that passage sounds right as composed is a human-ear call, not an
+automatable one -- left to the user.
+
+A side effect worth knowing about if this pattern is reused: the
+Makefile's `BANKED_MUSIC_SONG` rule target (`build/<game>/music_bank.asm`)
+is an explicit, non-pattern target, and briefly became the Makefile's
+*default* goal just by being declared earlier in the file than `all:` --
+`make GAME=picodiver` alone silently only built that one file and stopped,
+no error. Fixed with an explicit `.DEFAULT_GOAL := all` near the top of
+the Makefile, not by reordering (reordering is fragile against the next
+person adding a rule above `all:` again).
+
 ## Credits (see also README.md's own Credits section)
 
 - **Arkos Tracker** (2 and 3) and its player: (c) Julien "Targhan" Nevo
-  (<https://www.julien-nevo.com/arkostracker/>). Nothing from the
-  player's own source is vendored in this repo -- `lib/pico_music.c` only
-  wraps the C API z88dk already ships, and `tools/arkos_song_to_asm.py`
-  only shells out to AT3's own bundled CLI tool, nothing from it copied
-  in either.
+  (<https://www.julien-nevo.com/arkostracker/>). `lib/pico_music.c` (the
+  unbanked path) only wraps the C API z88dk already ships, and
+  `tools/arkos_song_to_asm.py` only shells out to AT3's own bundled CLI
+  tool. `lib/pico_music_player.asm` (the banked path, added 2026-10-13 --
+  see above) IS a vendored copy of the player's own source, needed because
+  banking it requires a file this project compiles itself, not one pulled
+  from z88dk's own prebuilt library archive.
 - **z88dk's own sccz80/classic-clib port** of the Arkos player
   (`support/arkos/`, `libsrc/target/zx/psg/asm_arkos_zx_smc.asm`):
-  credited there to ZXjogv.
+  credited there to ZXjogv. `lib/pico_music_player.asm` is a direct,
+  frozen-on-purpose copy of this file (plus three small added entry
+  trampolines -- see above), not kept in sync with z88dk's own copy.
 - Full-playback verification (2026-10-13) used "Lop Ears" by Andy Severn,
   one of Arkos Tracker 3's own bundled example songs -- local/ad-hoc
   verification only, not committed to this repo (see above).
+- `games/picodiver/sailing-by.aks` -- the user's own original composition,
+  written specifically to be PicoDiver's real background music. Unlike
+  every other audio content mentioned on this page, this one IS committed
+  (it's the user's own work, not third-party content).
 - The **recompose-by-ear-in-Arkos approach itself** (as opposed to an
   automated converter) follows the precedent set by David Crespo's
   CelesteNext (<https://davidprograma.itch.io/celeste>,

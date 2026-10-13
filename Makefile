@@ -14,6 +14,11 @@ export ZCCCFG := $(Z88DK_DIR)/lib/config/
 ZCC := $(Z88DK_DIR)/bin/zcc
 
 GAME       ?= demo
+# Explicit, not implicit via "first target in the file" -- the
+# BANKED_MUSIC_SONG build/music_bank.asm rule below is itself an
+# explicit (non-pattern) target, and would otherwise silently become the
+# real default goal just by appearing earlier in the file than "all".
+.DEFAULT_GOAL := all
 LIB_DIR    := lib
 GAME_DIR   := games/$(GAME)
 BUILD_DIR  := build/$(GAME)
@@ -43,12 +48,14 @@ TARGET     := $(BUILD_DIR)/$(GAME)
 # below (fixedtest is pico_trig.c's own first user; no real Arkos
 # content has been authored for this project; games/sfxtest/ is the only
 # pico_sfx_synth.c user so far), same opt-in spirit as BANKED_CSRCS.
-LIB_SRCS := $(filter-out $(LIB_DIR)/pico_music.c $(LIB_DIR)/pico_sfx_synth.c $(LIB_DIR)/pico_trig.c,$(wildcard $(LIB_DIR)/*.c))
+LIB_SRCS := $(filter-out $(LIB_DIR)/pico_music.c $(LIB_DIR)/pico_sfx_synth.c $(LIB_DIR)/pico_trig.c $(LIB_DIR)/pico_music_banked.c,$(wildcard $(LIB_DIR)/*.c))
 # pico_mul_z80n.asm (2026-10-12): hardware-mul override for classic
 # clib's own generic l_mult/l_mult_u/l_mult_0 -- see that file's own
 # top comment. Passed as a raw source alongside LIB_SRCS so it links
 # unconditionally for every game, same as any lib/*.c module.
-LIB_ASM_SRCS := $(wildcard $(LIB_DIR)/*.asm)
+# pico_music_player.asm excluded: it's never linked standalone -- only
+# concatenated into a banked page by the BANKED_MUSIC mechanism below.
+LIB_ASM_SRCS := $(filter-out $(LIB_DIR)/pico_music_player.asm,$(wildcard $(LIB_DIR)/*.asm))
 HEADERS := $(wildcard $(LIB_DIR)/*.h) $(wildcard $(GAME_DIR)/*.h)
 
 # --- Banked modules (per-game, via lib/pico_bank.h) ---
@@ -75,6 +82,33 @@ txt = 'SECTION ' + section + chr(10) + 'ORG \$$2000' + chr(10) + txt; \
 txt = txt.replace('code_compiler', section).replace('rodata_compiler', section).replace('data_compiler', section).replace('bss_compiler', section); \
 open(path, 'w').write(txt)" \
 		$@ PAGE_$(CBANK_$*)_$*
+
+# --- Banked music (player + one song's data, same physical page) ---
+# lib/pico_music_banked.h's own banking: the Arkos player (lib/
+# pico_music_player.asm, vendored from z88dk) and a game's song .asm
+# (tools/arkos_song_to_asm.py's output) are concatenated into ONE page,
+# since the player needs the song's bytes mapped in while it runs, not
+# just callable beforehand -- a sequential page-in-then-call-later
+# relationship (like BANKED_CSRCS above) doesn't fit this. A game opts in
+# by setting BANKED_MUSIC_SONG (path to the song .asm) and
+# BANKED_MUSIC_PAGE (a physical page from lib/pico_bank.h's confirmed-
+# safe list) in its own ifeq block below.
+BANKED_MUSIC_SONG :=
+BANKED_MUSIC_PAGE :=
+BANKED_MUSIC_ASMS = $(if $(BANKED_MUSIC_SONG),$(BUILD_DIR)/music_bank.asm,)
+
+$(BUILD_DIR)/music_bank.asm: $(LIB_DIR)/pico_music_player.asm $(BANKED_MUSIC_SONG) | $(BUILD_DIR)
+	python3 -c "\
+import sys; \
+player_path, song_path, out_path, page = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]; \
+section = 'PAGE_' + page + '_music_bank'; \
+player = open(player_path).read(); \
+player = chr(10).join(l for l in player.splitlines() if not l.strip().startswith('section ')); \
+song = open(song_path).read(); \
+song = chr(10).join(l for l in song.splitlines() if not l.strip().startswith('SECTION ')); \
+out = 'SECTION ' + section + chr(10) + 'ORG \$$2000' + chr(10) + player + chr(10) + song + chr(10); \
+open(out_path, 'w').write(out)" \
+		$(LIB_DIR)/pico_music_player.asm $(BANKED_MUSIC_SONG) $@ $(BANKED_MUSIC_PAGE)
 
 # Per-game opt-outs for library features a specific game doesn't use, to
 # recover resident-size budget under z88dk classic's 64K limit (see
@@ -109,6 +143,12 @@ ESXDOS_LIB :=
 # alone wasn't enough.
 BANKED_CSRCS := picodiver_map_data
 CBANK_picodiver_map_data := 8
+# Real background music (docs/music-notes.md) -- the vendored, banked
+# Arkos player + sailing_by_song.asm share physical page 14 (confirmed
+# clear of Layer 2's 18-29 range, distinct from page 8 above).
+BANKED_MUSIC_SONG := $(GAME_DIR)/sailing_by_song.asm
+BANKED_MUSIC_PAGE := 14
+LIB_SRCS += $(LIB_DIR)/pico_music_banked.c
 else ifeq ($(GAME),bankcalltest)
 # Proves lib/pico_bank.h's page-in/page-out window also works for banked
 # CODE, not just the banked const DATA every other user of this mechanism
@@ -168,11 +208,11 @@ all: $(TARGET).nex
 # -lesxdos: pico_data.c (dget/dset/cartdata) needs the low-level
 # esxdos_f_* calls -- same reasoning as dark-room-next's save.c, see
 # pico_data.c's own header comment.
-$(TARGET).nex: $(SRCS) $(HEADERS) $(BANKED_ASMS) | $(BUILD_DIR)
+$(TARGET).nex: $(SRCS) $(HEADERS) $(BANKED_ASMS) $(BANKED_MUSIC_ASMS) | $(BUILD_DIR)
 	$(ZCC) +zxn -clib=classic -subtype=nex \
 		-I$(LIB_DIR) -I$(GAME_DIR) \
 		-O3 $(GAME_CFLAGS) \
-		$(SRCS) $(BANKED_ASMS) \
+		$(SRCS) $(BANKED_ASMS) $(BANKED_MUSIC_ASMS) \
 		$(ESXDOS_LIB) \
 		-o $(TARGET) -create-app -m
 

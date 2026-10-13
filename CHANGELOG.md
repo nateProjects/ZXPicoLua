@@ -8,6 +8,25 @@ call site).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-13
+
+### Added
+- Real background music for PicoDiver — `games/picodiver/sailing-by.aks`,
+  the user's own original composition. Playing it required a new banked
+  music path (`lib/pico_music_banked.c`/`.h`, `lib/pico_music_player.asm`):
+  the unbanked Arkos player alone (`<psg/arkos.h>`, pulled from z88dk's
+  own prebuilt library archive) overflowed picodiver's resident budget by
+  3099 bytes with zero song data loaded, so banking just the song data
+  (the usual mechanism) wasn't enough — the player itself needed
+  vendoring and banking too, following the same approach CelesteNext
+  used for the same problem. Player + song now share one physical page
+  via a new Makefile mechanism (`BANKED_MUSIC_SONG`/`BANKED_MUSIC_PAGE`).
+  Verified linking (picodiver now builds with 150 bytes of resident
+  margin) and producing real AY waveform output via a `zesarux --aofile`
+  capture. See `docs/music-notes.md`'s "Real music, really wired into
+  PicoDiver" section for the full story, including a `.DEFAULT_GOAL`
+  Makefile regression caught and fixed along the way.
+
 ## [0.7.1] - 2026-10-13
 
 ### Added

@@ -293,7 +293,17 @@
 #include "pico_input.h"
 #include "pico_math.h"
 #include "pico_bank.h"
+#include "pico_music_banked.h"
 #include "picodiver_data.h"
+
+/* Real background music (docs/music-notes.md) -- sailing_by_song.asm's
+ * own Start symbol, banked onto the same physical page as the vendored
+ * Arkos player (Makefile's BANKED_MUSIC_PAGE). Declared without its own
+ * leading underscore -- sccz80 prepends one to every C symbol, and the
+ * song's own .asm already bakes one into the label via SongToAkg's
+ * --labelPrefix (tools/arkos_song_to_asm.py's own comment). */
+#define PICODIVER_MUSIC_PAGE 14
+extern uint8_t sailing_by_Start[];
 
 /* Original Pico-8 Lua cart's own per-tick movement values, kept as their
  * own literal "1" constants -- not folded into a bigger number -- so
@@ -766,9 +776,12 @@ int main(void) {
 
     titleinit();
 
+    pico_music_banked_init(PICODIVER_MUSIC_PAGE, sailing_by_Start, 0);
+
     for (;;) {
         intrinsic_halt(); /* native 50Hz -- confirmed smooth at Stage 1, see docs/picodiver-notes.md */
         pico_input_update();
+        pico_music_banked_play_frame(PICODIVER_MUSIC_PAGE);
 
         if (mode != MODE_GAME) {
             /* All three static/menu screens (TITLE, DEATH, WIN) share
