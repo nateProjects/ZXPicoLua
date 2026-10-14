@@ -8,6 +8,24 @@ call site).
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-10-14
+
+### Fixed
+- `pico_tilemap_from_map()`'s own init-time call (building picodiver's
+  ocean background) was missed in 0.8.1's sprite-data banking sweep --
+  it reads both `picodiver_map_data` and `picodiver_sprite_data`
+  interleaved, same as `ship_show()`, but wasn't caught by grepping for
+  `pico_spr`/etc (different function name). Only the map page was paged
+  in, so it built the tilemap from garbage sheet bytes -- user-reported:
+  "the colouring has changed for the background." Fixed the same way as
+  `ship_show()` (buffer the map region, then page to the sprite page).
+  That fix's first attempt introduced a second bug (reordered the
+  ocean-extension loop ahead of `pico_tilemap_from_map()`, so its own
+  sand row survived as a stray band instead of being overwritten as
+  intended) -- caught by screenshot-comparing against a rebuilt
+  pre-banking reference, not assumed correct. See
+  docs/picodiver-notes.md's "Stack/BSS collision" section.
+
 ## [0.8.1] - 2026-10-13
 
 ### Fixed

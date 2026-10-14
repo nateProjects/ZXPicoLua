@@ -746,17 +746,47 @@ int main(void) {
      * ocean) distinct tiles actually used -- see pico_tilemap.h's own
      * comment for the full contract.
      *
-     * picodiver_map_data is banked (picodiver_data.h's own comment) --
-     * paged in once for this call AND the ocean-extension loop right
-     * after it (both read it, contiguous init-time code, one page-in/
-     * out pair covers both). picodiver_sprite_data (also read here) is
-     * resident, not banked, so it needs no page-in of its own. */
+     * picodiver_map_data AND picodiver_sprite_data are both banked now
+     * (picodiver_data.h's own comment) -- pico_tilemap_from_map() reads
+     * BOTH, interleaved per-tile (one map lookup, then an immediate
+     * sheet read for that same tile), which the single shared window
+     * can't satisfy directly (only one physical page mapped at a time).
+     * Same fix as ship_show()'s own rework: buffer the small (16x12,
+     * 192-byte) map region this call actually needs while the map page
+     * is in, page out, then page in the sprite page for the actual
+     * pico_tilemap_from_map() call against the buffer instead of the
+     * banked pointer directly. The ocean-extension loop right after
+     * only touches map data, so it stays under the SAME map-page
+     * bracket as the buffering step, no extra page switch needed for
+     * it. */
     {
-    uint8_t map_prev_page = pico_bank_page_in(PICODIVER_MAP_PHYSICAL_PAGE);
+    uint8_t init_tiles[12][16];
+    uint8_t prev_page;
+
+    /* Order matters: pico_tilemap_from_map() must run BEFORE the ocean-
+     * extension loop below, same as the original (unbanked) code -- the
+     * extension loop's own 20-row write deliberately overwrites this
+     * call's shorter 12-row block (including its own sand row, which
+     * would otherwise land stranded mid-ocean once the canvas is taller
+     * than the original cart's own 12-row ocean). Getting this backwards
+     * was a real bug caught by the user (2026-10-14): a reordered first
+     * attempt at this banked rewrite ran the extension loop first, so
+     * pico_tilemap_from_map()'s own sand row survived ON TOP of it
+     * instead of being overwritten -- visible as a stray yellow band
+     * partway down the ocean. */
+    prev_page = pico_bank_page_in(PICODIVER_MAP_PHYSICAL_PAGE);
+    for (row = 0; row < 12; row++)
+        for (col = 0; col < 16; col++)
+            init_tiles[row][col] = picodiver_map_data[(uint16_t)(4 + row) * PICODIVER_MAP_W + col];
+    pico_bank_page_out(prev_page);
+
+    prev_page = pico_bank_page_in(PICODIVER_SPRITE_PHYSICAL_PAGE);
     pico_tilemap_from_map(picodiver_sprite_data, PICODIVER_SHEET_W,
-                           picodiver_map_data, PICODIVER_MAP_W, PICODIVER_MAP_H,
-                           0, 4, 16, 12,
+                           &init_tiles[0][0], 16, 12,
+                           0, 0, 16, 12,
                            TILE_ORIGIN_COL, (uint8_t)(TILE_ORIGIN_ROW + 4));
+    pico_bank_page_out(prev_page);
+
     /* Stage 10: extend that same real ocean pattern to cover the full-
      * resolution canvas's own, much bigger ocean area (SCREEN_W/8
      * columns x OCEAN_ROWS rows) -- NOT a naive wrap of all 12 source
@@ -770,7 +800,10 @@ int main(void) {
      * much-lower true bottom, and the uniform deep-water tile simply
      * fills however many extra rows the taller canvas needs above them,
      * which is exactly what "the same ocean, just deeper" should look
-     * like with no new art. */
+     * like with no new art. Only needs the map page -- already defined
+     * tile patterns (loaded above) are reused by id, no sprite-sheet
+     * read happens here. */
+    prev_page = pico_bank_page_in(PICODIVER_MAP_PHYSICAL_PAGE);
     {
         uint8_t ocean_rows = (SCREEN_H - 32) / 8;
         for (row = 0; row < ocean_rows; row++) {
@@ -784,7 +817,7 @@ int main(void) {
             }
         }
     }
-    pico_bank_page_out(map_prev_page);
+    pico_bank_page_out(prev_page);
     }
     /* Rows 0-3 (above the ocean -- the title/death/win screens' own
      * ship banner lives here, software-drawn over the top, Stage 8)

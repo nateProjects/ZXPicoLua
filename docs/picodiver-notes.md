@@ -376,6 +376,39 @@ small stack array while the map page is in, paging it out, *then* paging
 in the sprite page for a second pass that does the actual `pico_spr()`
 calls -- two sequential page visits instead of one page holding both.
 
+**A second real wrinkle, missed on the first pass, caught by the user**:
+`pico_tilemap_from_map()` -- called once at init to build the ocean
+background -- ALSO reads both `picodiver_map_data` and
+`picodiver_sprite_data` interleaved, same issue as `ship_show()`, but
+this call site wasn't caught by grepping for `pico_spr`/`pico_sget`/
+`pico_sset`/`pico_sspr` (it's a different function name entirely). Only
+the map page was being paged in for it, so it read garbage sheet bytes
+building the tilemap -- not a full palette swap (the base ocean colour
+was still right), but the user noticed anyway: *"the colouring has
+changed for the background."* Fixed the same way as `ship_show()` --
+buffer the needed 16x12 map region, page out, page in the sprite page,
+call `pico_tilemap_from_map()` against the buffer.
+
+**That fix's first attempt introduced a second, more visible bug**:
+reordering the buffering step accidentally also reordered the two
+map-writing calls relative to each other. The original (unbanked) code
+ran `pico_tilemap_from_map()` first, then a separate ocean-extension
+loop *afterward* that deliberately overwrites the same cells with the
+taller canvas's own, bigger ocean pattern -- `pico_tilemap_from_map()`'s
+own shorter 12-row block (including its own sand row) is never meant to
+survive on screen, it's immediately painted over. The first banked
+rewrite put the extension loop first (since it only needs the map page,
+convenient to keep under the same bracket as the buffering step) and
+`pico_tilemap_from_map()` second -- inverting the overwrite order, so
+its own sand row now survived ON TOP, appearing as a stray yellow band
+stranded partway down the ocean. Caught by comparing a screenshot
+against a rebuilt pre-banking reference (`git checkout` the prior commit,
+rebuild, screenshot, compare) rather than assuming the first fix was
+right -- restored the original ordering (buffer map region -> page out
+-> page in sprite -> call `pico_tilemap_from_map()` -> page out -> page
+in map again -> run the extension loop -> page out), confirmed via a
+fresh screenshot matching the pre-banking reference exactly.
+
 **Result, measured**: `BSS_END_tail` dropped from `$FF84` to `$E0C6` --
 margin went from ~150 bytes to ~8000. Re-measured `SP` during real
 gameplay (ZRCP, `set-ui-io-ports`/direct `write-memory` of `_mode` to
