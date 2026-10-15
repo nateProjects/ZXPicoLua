@@ -208,6 +208,17 @@ else ifeq ($(GAME),fixedtest)
 # own existing pico_fix_* checks.
 LIB_SRCS += $(LIB_DIR)/pico_trig.c
 ESXDOS_LIB := -lesxdos
+else ifeq ($(GAME),akgplay)
+# A dedicated, no-gameplay Arkos song player -- see this game's own
+# main.c top comment for why (previewing a song's true tempo without
+# any game's own per-frame budget as a confound). Same banked-music
+# mechanism as picodiver's own BANKED_MUSIC_SONG/BANKED_MUSIC_PAGE --
+# swap the .asm here (and the symbol in main.c) to preview a different
+# song.
+BANKED_MUSIC_SONG := $(GAME_DIR)/sailing_by_song.asm
+BANKED_MUSIC_PAGE := 14
+LIB_SRCS += $(LIB_DIR)/pico_music_banked.c
+ESXDOS_LIB := -lesxdos
 else
 ESXDOS_LIB := -lesxdos
 endif

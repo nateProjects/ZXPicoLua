@@ -377,3 +377,37 @@ worth a real profiling pass in its own right if more responsiveness is
 wanted, but out of scope for this specific bug (which was about a
 severe, *new* 4x-speed regression, not this smaller, longstanding
 gap).
+
+## `games/akgplay/` -- a dedicated, no-gameplay song player
+
+Built after the user asked, directly: "could you write a separate ay
+player app for playing [songs]... in future." Real motivation, not
+just convenience: with the 14MHz regression fixed, the user A/B tested
+`sailing-by.aks` against "Lop Ears" (the earlier known-good reference
+track, local-only, see above) through PicoDiver itself and found two
+separate things -- `sailing-by.aks` doesn't play all its own tracks
+(their own hypothesis: too many internal tracks/instruments for this
+project's own banked single-chip setup, something to address by
+simplifying the composition, not a code fix), and even Lop Ears
+(confirmed correctly composed) still sounded tempo-off *through
+PicoDiver*. That second finding couldn't be cleanly isolated while
+testing through a real game -- PicoDiver's own gameplay loop (sprites,
+collision, tilemap, HUD) is a genuine confound for a pure "is the
+player itself correct" question.
+
+`games/akgplay/` strips all of that away: `pico_video_init()`, one
+`pico_music_banked_init()` call, then a loop that's just
+`intrinsic_halt(); pico_music_banked_play_frame(); frame++;
+draw(); pico_flip();` -- nothing else competing for the per-frame
+budget. Displays a running `frame` counter and a `seconds` counter
+(incrementing once every 50 frames) specifically so tempo can be
+checked against a real clock/stopwatch directly, the same discipline
+that caught the CPU-speed regression above, rather than trusting
+"sounds about right." Reuses PicoDiver's own `BANKED_MUSIC_SONG`/
+`BANKED_MUSIC_PAGE` Makefile mechanism unchanged -- swapping to a
+different song is: convert it with `tools/arkos_song_to_asm.py`,
+point `BANKED_MUSIC_SONG` (this game's own `ifeq` block) at the new
+`.asm`, update the `extern` symbol in `main.c` to match. Ships with
+the same committed `sailing-by.aks` content PicoDiver uses (its own
+copy of `sailing_by_song.asm`, not a cross-game reference) -- the only
+real Arkos content currently committed to this project.

@@ -6,7 +6,7 @@ See [`docs/pico8-vs-zxpicolua-reference.md`](docs/pico8-vs-zxpicolua-reference.m
 
 ## Status
 
-Current version: **0.10.3** (pre-1.0, see [CHANGELOG.md](CHANGELOG.md) — [Semantic Versioning](https://semver.org/), no API-stability guarantee yet).
+Current version: **0.11.0** (pre-1.0, see [CHANGELOG.md](CHANGELOG.md) — [Semantic Versioning](https://semver.org/), no API-stability guarantee yet).
 
 The core API is complete: Layer 2 framebuffer access, shape/text primitives, software sprites, keyboard input, math/RNG, tile maps, persistent storage (esxDOS), a hardware tilemap background, and hardware sprites. [PicoDiver](games/picodiver/) is the primary example — a full playable game ported end to end (title screen, gameplay, collision, HUD, scrolling background), not a demo.
 
@@ -23,7 +23,7 @@ make GAME=picodiver run  # builds and launches it in ZEsarUX
 make clean-all           # removes all build/ output
 ```
 
-Each game lives in its own directory under `games/`, always linked against the shared `lib/`. `games/picodiver/` is the real, worked example; `games/demo/`, `games/fixedtest/` (now also the `pico_sin`/`pico_cos` test bed), `games/hwspike/`, `games/speedtest/`, `games/bankcalltest/`, `games/musictest/`, `games/sfxtest/`, and `games/cliptest/` are smaller milestone/scratch tests kept for reference, not polished examples.
+Each game lives in its own directory under `games/`, always linked against the shared `lib/`. `games/picodiver/` is the real, worked example; `games/demo/`, `games/fixedtest/` (now also the `pico_sin`/`pico_cos` test bed), `games/hwspike/`, `games/speedtest/`, `games/bankcalltest/`, `games/musictest/`, `games/sfxtest/`, and `games/cliptest/` are smaller milestone/scratch tests kept for reference, not polished examples. `games/akgplay/` is a small dedicated utility, not a test — a no-gameplay Arkos (`.aks`) song player, useful for previewing any song's real tempo without a game's own per-frame budget as a confound (see `docs/music-notes.md`).
 
 ## Tools
 

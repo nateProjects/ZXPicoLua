@@ -8,6 +8,18 @@ call site).
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-15
+
+### Added
+- `games/akgplay/` -- a small, dedicated Arkos song player, no gameplay.
+  Reuses `lib/pico_music_banked.c`'s proven playback path with nothing
+  else competing for the per-frame budget, so a song's real tempo can
+  be checked without a game's own gameplay loop as a confound. Shows a
+  running frame/seconds counter to check against a real clock directly.
+  Ships with the same committed `sailing-by.aks` content PicoDiver
+  uses; swap songs via the Makefile's `BANKED_MUSIC_SONG` (same
+  mechanism PicoDiver already proved). See docs/music-notes.md.
+
 ## [0.10.3] - 2026-10-15
 
 ### Fixed
