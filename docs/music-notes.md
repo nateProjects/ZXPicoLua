@@ -268,3 +268,55 @@ person adding a rule above `all:` again).
    `pico_bank_page_in()`/`pico_bank_page_out()` pattern as any other
    banked code/data call -- CelesteNext's own `sfx_update()` does exactly
    this around its own per-frame player tick.
+
+## A real, documented requirement this project was violating: interrupts must be off during every player call
+
+Found while chasing a real symptom: `sailing-by.aks` (the user's own
+~3-minute composition, `games/picodiver/`) appeared to just stop
+instead of looping, rather than reported as finished-and-silent from the
+start -- a real difference from every earlier test here, which only
+ever used short tracks (the earlier "Lop Ears" sample, verified via a
+12-second capture) too brief to ever reach a real loop-back point.
+
+`support/arkos/PlayerAkg.asm`'s own top-of-file comment (the
+*original*, human-readable Arkos source -- not visible in the
+z88dk-processed, self-modifying-code-obfuscated `asm_arkos_zx_smc.asm`
+this project's own `lib/pico_music_player.asm` is vendored from, which
+carries no such warning itself) says, verbatim: *"The player uses the
+stack for optimizations. Make sure the interruptions are disabled
+before it is called. The stack pointer is saved at the beginning and
+restored at the end."* This project's own `pico_music_banked_*_asm()`
+trampolines were plain `jp`s with no `di`/`ei` at all -- `intrinsic_ei()`
+is called once at startup and never touched again, meaning every single
+`pico_music_banked_play_frame()` call ran with interrupts fully enabled
+the whole time.
+
+Read the real reason this matters, not just trusted the warning: the
+player's own song-end/loop handling (`PLY_AKG_ReadLinker` in the
+original source) temporarily repoints `SP` at the song's own
+position-table data and walks it via `pop` for speed -- a classic Z80
+"stack as a fast sequential reader" trick. If a maskable interrupt
+fires during that exact window, ITS OWN return address gets pushed
+into/popped from SONG DATA instead of the real stack -- real
+corruption, happening to coincide with exactly the one moment (the
+loop-back transition) a short test track would never reach, but any
+real several-minute composition left to loop definitely would.
+
+Fixed in `lib/pico_music_player.asm`'s own trampolines: changed from a
+tail `jp` into each `PLY_AKG_*` entry point to `di` / `call` / `ei` /
+`ret`, masking interrupts for just the duration of that one call (the
+50Hz interrupt will simply fire slightly later, after `ei` -- Z80's own
+"`ei` takes effect after the next instruction" semantics make the
+immediately-following `ret` itself interrupt-safe too, no race). Same
+pattern applied to `_init`/`_play`/`_stop` for consistency, though
+`_init`/`_stop` are far less likely to race against an interrupt than
+`_play` (called every single frame).
+
+**Not independently re-verified end to end against a full ~3-minute
+loop cycle** -- doing so would mean waiting out the song's own real
+length, impractical to automate reliably in this project's own testing
+loop (and this session's own crude audio-capture tooling has already
+proven unreliable for subtler audible questions more than once). The
+fix matches the documented requirement and the exact failure mode
+precisely enough to ship with real confidence, but genuine confirmation
+needs a real listening pass through at least one full loop.

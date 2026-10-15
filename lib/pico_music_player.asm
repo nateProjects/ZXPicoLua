@@ -23,22 +23,51 @@
 ;; -- see docs/bank-call-notes.md's proven banked-CODE pattern). Placed
 ;; at the top so they assemble to a short, fixed, easy-to-reason-about
 ;; offset from the page's own $2000 base.
+;; support/arkos/PlayerAkg.asm's own top-of-file notice, verbatim:
+;; "The player uses the stack for optimizations. Make sure the
+;; interruptions are disabled before it is called. The stack pointer is
+;; saved at the beginning and restored at the end." -- NOT optional,
+;; and not something the original z88dk-processed asm_arkos_zx_smc.asm
+;; enforces itself (it just assembles the player; callers are on their
+;; own for this). Found the hard way: PLY_AKG_PLAY's own song-loop
+;; handling (support/arkos/PlayerAkg.asm's own PLY_AKG_ReadLinker)
+;; temporarily repoints SP at the song's own position-table data to
+;; walk it via POP for speed -- if a maskable interrupt fires during
+;; that exact window, its own return address gets pushed into/popped
+;; from SONG DATA instead of the real stack, corrupting the song's own
+;; playback state right at the one moment (the loop-back transition)
+;; this project's own test wouldn't have been playing long enough to
+;; hit on a short test track, but WOULD hit on a real, several-minute
+;; composition left to loop -- exactly the failure mode reported
+;; (sailing-by.aks appearing to just stop instead of repeating).
+;; `call`+`di`/`ei` instead of a plain `jp` so each entry point can
+;; mask interrupts for just its own call's duration -- bounded, same
+;; cost either way, not a frame-budget concern.
 PUBLIC _pico_music_banked_init_asm
 _pico_music_banked_init_asm:
         pop     bc              ; BC = retaddr
         pop     de              ; E = subsong number
         pop     hl              ; HL = song address
         ld      a, e            ; A = subsong number
-        push    bc              ; restore retaddr
-        jp      PLY_AKG_INIT
+        push    bc              ; restore retaddr on the real stack
+        di
+        call    PLY_AKG_INIT
+        ei
+        ret
 
 PUBLIC _pico_music_banked_play_asm
 _pico_music_banked_play_asm:
-        jp      PLY_AKG_PLAY
+        di
+        call    PLY_AKG_PLAY
+        ei
+        ret
 
 PUBLIC _pico_music_banked_stop_asm
 _pico_music_banked_stop_asm:
-        jp      PLY_AKG_STOP
+        di
+        call    PLY_AKG_STOP
+        ei
+        ret
 
         defc    asm_smc_PLY_AKG_INIT=PLY_AKG_INIT
         defc    asm_smc_PLY_AKG_STOP=PLY_AKG_STOP

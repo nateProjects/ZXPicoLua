@@ -8,6 +8,22 @@ call site).
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-10-15
+
+### Fixed
+- The Arkos music player's own calls ran with interrupts enabled the
+  whole time -- violating a real, documented requirement in the
+  player's original source (not visible in z88dk's own pre-assembled
+  copy): "make sure the interruptions are disabled before it is
+  called," because its song-loop handling temporarily repoints the
+  stack pointer at song data for a fast sequential read. An interrupt
+  firing during that window corrupts it -- exactly at the loop-back
+  transition, which only a real several-minute composition (like
+  `sailing-by.aks`) would ever reach; every earlier test track here was
+  too short to expose it. Fixed by wrapping each call into the player
+  in `di`/`call`/`ei`/`ret` instead of a plain `jp`. See
+  docs/music-notes.md's own section on this.
+
 ## [0.10.1] - 2026-10-15
 
 ### Added
