@@ -227,3 +227,130 @@ a real lesson: don't trust automated signal analysis alone for a
 timing-sensitive audible-artifact question like this one -- a listening
 pass is the only real confirmation here, more than for any other AY
 check in this project so far).
+
+**User's own listening test: still just "a click," unchanged.** The
+Turbosound separation above didn't fix anything audible, because it
+never actually worked -- confirmed by direct ZRCP readback
+(`tbblue-get-register 8` showed the enable bit set correctly) ruling
+out the *enable* step, but the chip-SELECT values themselves
+(`z88dk`'s own `IT_SELECT_PSG_0`/`_1` = `0x0F`/`0x0E`) turned out to be
+wrong: real Turbosound Next chip-select needs the upper nibble SET
+(confirmed via web search and this project's own prior spike notes,
+which recorded `%11111101`/`%11111110` = `$FD`/`$FE`) -- `0x0E`/`0x0F`
+instead land on ordinary, mostly-unused AY register indices 14/15, a
+silent no-op, meaning `pico_sfx_synth` was writing to chip 0 the whole
+time regardless of the "separation" code. Corrected to the literal
+values `$FF`/`$FE` directly rather than trusting z88dk's own symbol
+names -- still no audible change ("just a click still"). At this
+point `pico_sfx_synth` was abandoned for picodiver (kept in the
+library for other uses, like `games/sfxtest/`, which never shares a
+chip with music) in favor of a completely different, independently-
+authored player: AYFX.
+
+## Switching to AYFX (Shiru's format)
+
+The user had their own AYFX resources locally
+(`/Users/nat/Code/Games/ayfxResources/`, including a real Z80 driver
+port, `next-ayfx-main/src/ayfx.asm`, and example `.afb` effect banks)
+and suggested trying it once `pico_sfx_synth` had failed three separate
+times. Vendored just the engine (`AFXINIT`/`AFXPLAY`/`AFXFRAME` from
+the "Minimal ayFX player v0.15" section, not the NextBASIC driver
+wrapper around it) into `lib/pico_ayfx_player.asm`, adapting two real
+things from the original: the hardcoded `START_OF_FX_BANK equ $c000`
+(assumed a NextBASIC-paged bank) became an `EXTERN` to this project's
+own linked effects-bank symbol, and `ay_chip_select` (a private
+variable the NextBASIC driver's own API used to set) was made `PUBLIC`
+so `lib/pico_ayfx.c` can set it directly. `tools/afb_to_c.py` embeds a
+raw `.afb` file as a flat C byte array -- no format parsing needed
+here, `AFXPLAY` parses its own format at runtime.
+
+**Same AY-conflict lesson, independently reconfirmed**: AYFX's own
+`AFXFRAME` has the identical shape as `pico_sfx_synth`'s own bug (an
+internal shadow mixer byte, rewritten unconditionally every frame,
+blind to anything else on the chip) -- and its own README documents
+the exact same symptom ("can sometimes become crunchy... noise mix
+being left on") when sharing a chip with other AY activity. Confirmed
+directly: tested AYFX and Arkos music on the SAME chip (Turbosound off
+entirely) specifically to see whether AYFX's architecture coordinated
+any better than `pico_sfx_synth`'s did -- it didn't. User's own
+report: "the music... sounds like it has white noise mixed in" --
+continuously, not just during an sfx, exactly matching AYFX's default
+idle mixer state (`0x00` = both tone AND noise generators enabled on
+ALL channels per the AY's active-low convention), rewritten over
+Arkos's own per-note mixer state every single frame.
+
+**Turbosound separation, attempt 2 -- order matters.** With AYFX
+correctly isolated to its own chip (same `$FF`/`$FE` literal values,
+independently reconfirmed by reading AYFX's own `ay_chip_select`
+convention -- a SECOND unrelated source agreeing with the earlier
+correction), the FIRST attempt (enable Turbosound, start music, call
+`pico_ayfx_init()` after) silenced the music ENTIRELY. Found a real
+precedent while reading AYFX's own README: its NextDAW compatibility
+note says *"make sure to install the NextDAW driver first, otherwise
+you'll hear very bad audio corruption"* -- the same class of problem
+(an order-of-operations dependency around enabling Turbosound).
+Reversed the order (`pico_ayfx_init()`, which enables Turbosound,
+BEFORE `pico_music_banked_init()`) -- this fixed it. Root cause not
+fully explained (why enabling Turbosound mid-playback silences an
+already-running AY chip is still not understood in detail), but the
+fix is simple, real, and confirmed by the user directly: "that is much
+better - the music still plays."
+
+## The long-effect slowdown -- a real bug, but not where first suspected
+
+With chip separation working, the user reported: "the music still
+plays (albeit slows down) when I pick up a fish." Measured via ZRCP
+(forced state + a frame-counter poll over fixed wall-clock windows,
+not audio) -- confirmed a real, sustained ~35% framerate drop lasting
+several seconds after a single trigger, recovering afterward. This
+pointed at the triggered effect's own real DURATION, not a logic bug
+-- `games/picodiver/picodiver_ayfx_bank.c`'s indices had been picked
+arbitrarily (1/2/3) without knowing each effect's actual length.
+
+**A real byte-alignment bug in my own manual analysis, not the vendored
+engine.** Tried to verify by computing each effect's address from the
+bank's own offset table by hand -- got nonsensical, wildly
+out-of-file-bounds results for EVERY effect in TWO different bank
+files, strongly suggesting a bug. Confirmed via web search that the
+real AYFX bank format spec: *"offset +0 contains the total number of
+effects... offset +1 contains a table of offsets."* **Byte 0 is the
+effect COUNT, not the first table entry** -- my manual verification
+script read the table starting at byte 0, one byte too early,
+corrupting every single entry's value. The VENDORED ASSEMBLY ITSELF
+was never wrong (it already used `bank+1` as the table base, matching
+the real spec) -- this was purely a bug in my own diagnostic script,
+not the shipped code.
+
+Recomputing with the correct alignment, `next-ayfx-main/example/
+example.afb`'s own 6 effects resolved to sensible in-bounds addresses
+AND had real embedded names (the bank format stores a null-terminated
+label after each effect): `0=empty 1=gold 2=levelup 3=gameover 4=key
+5=hit`, with real sizes 30/29/80/336/74/40 bytes. **`gameover` (336
+bytes, by far the largest) was exactly the effect assigned to the
+fish-catch trigger** -- the single most frequent event in the game,
+matching the user's own report precisely ("when I pick up a fish").
+Reassigned to the three short effects instead: `gold` (catch, a
+strong thematic match by luck), `hit` (bad hit), `key` (life lost, a
+weaker thematic match but short). Confirmed by the user directly
+afterward: "it seems okay - much better than before."
+
+**Also discovered along the way**: the other 19 "named" `.afb` files
+in `/Users/nat/Code/Games/ayfxResources/examples/` (`blip.afb`,
+`hitbat.afb`, etc.) are byte-for-byte identical to each other (same
+MD5) -- not 19 distinct sounds, but 19 copies of the SAME 20-effect
+bank, whose own effects are anonymously labelled `noname`/`test1`
+through `test19` (not real content). The filenames are unrelated to
+what's actually inside -- a dead end for picking "the blip sound" by
+filename alone; would need the same label-decoding approach used above
+on `example.afb` to find anything meaningful in that bank, if it's
+ever needed.
+
+## Known-good configuration, as shipped
+
+`pico_ayfx_init()` before `pico_music_banked_init()` (order matters,
+see above); AYFX on Turbosound PSG chip 1, Arkos music on PSG chip 0;
+effects picked by real embedded name/size, not blindly by index. Real,
+picodiver-specific sound effects (replacing this placeholder bank)
+are still a future task, same workflow as `sailing-by.aks` for music
+-- author in Shiru's editor or an AYFX-compatible tool, export a
+fresh `.afb`, convert via `tools/afb_to_c.py`.

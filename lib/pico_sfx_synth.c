@@ -27,11 +27,12 @@ static channel_state_t ch_state[3];
  * ALSO supports but defaults away from: a genuinely separate physical
  * AY chip, not register-level coordination (which would need
  * cooperation from the vendored, frozen-on-purpose Arkos player to do
- * safely). z88dk's own <arch/zxn.h> already exposes the Next's
- * Turbosound chip-select cleanly (IO_TURBOSOUND/IT_SELECT_PSG_n,
- * confirmed against libsrc/_DEVELOPMENT/target/zxn/config_zxn_private.inc's
- * own numeric values) -- select chip 1 before this module's own writes,
- * restore chip 0 immediately after, every time. The vendored Arkos
+ * safely). z88dk's own <arch/zxn.h> exposes the Next's Turbosound
+ * chip-select port (IO_TURBOSOUND) -- its own symbolic values for WHICH
+ * chip to select turned out wrong, see the comment by
+ * TURBOSOUND_SELECT_PSG_0/1 below -- select chip 1 before this module's
+ * own writes, restore chip 0 immediately after, every time. The vendored
+ * Arkos
  * player itself needs no changes: it never selects a chip explicitly
  * (written before Turbosound was a consideration), so it always targets
  * whatever chip is CURRENTLY selected when it runs -- as long as this
@@ -45,6 +46,22 @@ static void ensure_turbosound(void) {
                   (uint8_t)(ZXN_READ_REG(REG_PERIPHERAL_3) | RP3_ENABLE_TURBOSOUND));
     turbosound_ready = 1;
 }
+
+/* z88dk's own <arch/zxn.h> symbolic constants for this (IT_SELECT_PSG_0/
+ * 1/2 = 0x0F/0x0E/0x0D) turned out NOT to work -- confirmed the hard way,
+ * not assumed: selecting with those values left sfx audibly conflicting
+ * with music exactly as before (still "just a click"), meaning the
+ * chip-select never actually took effect; those values read as ordinary
+ * (unused, harmless) AY register-select indices 13-15, not as the
+ * special chip-select command. The real protocol needs the upper nibble
+ * SET, not clear (confirmed against this project's own prior research,
+ * `z88dk_banking_reference`-adjacent findings noting the exact bit
+ * pattern `%11111101`/`%11111110`, and cross-checked against outside
+ * documentation): write $FF/$FE/$FD to select chip 0/1/2. Using these
+ * literal values directly rather than z88dk's own (apparently wrong)
+ * symbols. */
+#define TURBOSOUND_SELECT_PSG_0 0xFF
+#define TURBOSOUND_SELECT_PSG_1 0xFE
 
 /* psg_tone()/psg_volume() (lib psg.h) take a channel BITMASK (chan0=1,
  * chan1=2, chan2=4), not a 0-2 index -- same shift every call site below
@@ -88,23 +105,23 @@ static void apply_note(uint8_t channel) {
 void pico_sfx_synth_play(const pico_sfx_t *sfx, uint8_t channel) {
     if (channel > 2 || sfx->note_count == 0) return;
     ensure_turbosound();
-    IO_TURBOSOUND = IT_SELECT_PSG_1;
+    IO_TURBOSOUND = TURBOSOUND_SELECT_PSG_1;
     ch_state[channel].sfx = sfx;
     ch_state[channel].cur_note = 0;
     ch_state[channel].ticks_left = sfx->duration_ticks;
     ch_state[channel].playing = 1;
     apply_note(channel);
-    IO_TURBOSOUND = IT_SELECT_PSG_0;
+    IO_TURBOSOUND = TURBOSOUND_SELECT_PSG_0;
 }
 
 void pico_sfx_synth_stop(uint8_t channel) {
     if (channel > 2) return;
     ensure_turbosound();
-    IO_TURBOSOUND = IT_SELECT_PSG_1;
+    IO_TURBOSOUND = TURBOSOUND_SELECT_PSG_1;
     ch_state[channel].playing = 0;
     psg_volume(chan_bit(channel), 0);
     update_channel_mask();
-    IO_TURBOSOUND = IT_SELECT_PSG_0;
+    IO_TURBOSOUND = TURBOSOUND_SELECT_PSG_0;
 }
 
 void pico_sfx_synth_update(void) {
@@ -119,7 +136,7 @@ void pico_sfx_synth_update(void) {
      * reason). */
     if (!any_active) return;
 
-    IO_TURBOSOUND = IT_SELECT_PSG_1;
+    IO_TURBOSOUND = TURBOSOUND_SELECT_PSG_1;
     for (c = 0; c < 3; c++) {
         const pico_sfx_t *sfx;
         if (!ch_state[c].playing) continue;
@@ -142,5 +159,5 @@ void pico_sfx_synth_update(void) {
         ch_state[c].ticks_left = sfx->duration_ticks;
         apply_note(c);
     }
-    IO_TURBOSOUND = IT_SELECT_PSG_0;
+    IO_TURBOSOUND = TURBOSOUND_SELECT_PSG_0;
 }

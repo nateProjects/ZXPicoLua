@@ -8,6 +8,30 @@ call site).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-15
+
+### Changed
+- PicoDiver's sound effects now use AYFX (Shiru's format,
+  `lib/pico_ayfx.c`/`.h`, vendored engine `lib/pico_ayfx_player.asm`)
+  instead of `pico_sfx_synth.c` -- three separate fixes to the latter
+  (reasserting every tick, then two rounds of Turbosound chip-select
+  correction) never resolved the real conflict with the Arkos music
+  player sharing one AY chip. AYFX turned out to have the identical
+  architectural issue on a shared chip (confirmed directly, and
+  documented in its own README), but running it on a genuinely
+  separate AY chip (same Turbosound approach, now with the actually-
+  correct chip-select values) works. Needed an init-order fix too
+  (enable Turbosound before starting Arkos's music, not after -- the
+  reverse order silenced the music entirely) and a real bank-format bug
+  fix (byte 0 of an `.afb` file is the effect count, not part of the
+  offset table -- misreading it produced wildly out-of-bounds "effect"
+  reads that looked like unpredictable slowdowns, traced to one
+  specific placeholder effect, "gameover" at 336 bytes, assigned to
+  the most frequent in-game trigger). `pico_sfx_synth.c` itself is
+  unchanged and still available for games that don't also play Arkos
+  music on the same chip. See `docs/sfx-convert-notes.md`'s full
+  account of both attempts.
+
 ## [0.9.2] - 2026-10-15
 
 ### Fixed

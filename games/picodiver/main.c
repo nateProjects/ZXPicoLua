@@ -294,7 +294,7 @@
 #include "pico_math.h"
 #include "pico_bank.h"
 #include "pico_music_banked.h"
-#include "pico_sfx_synth.h"
+#include "pico_ayfx.h"
 #include "picodiver_data.h"
 
 /* Real background music (docs/music-notes.md) -- sailing_by_song.asm's
@@ -306,21 +306,34 @@
 #define PICODIVER_MUSIC_PAGE 14
 extern uint8_t sailing_by_Start[];
 
-/* Sound effects (docs/sfx-convert-notes.md) -- games/picodiver/picodiver_sfx.c,
- * converted directly from the real cart's own __sfx__ data (picodiver2.p8,
- * sfx 0/1/2 -- the only 3 of the original's 5 sfx() call sites ever use,
- * confirmed by reading the cart source). Resident (not banked -- tiny).
- * Mapping, read off the original cart directly (docs/reference doesn't
- * cover audio): sfx(0) = a bad hit (octopus or creature, score drain),
- * sfx(1) = life lost (oxygen ran out), sfx(2) = caught a fish (score up).
- * All three play on channel 0 -- the original's own sfx(n) calls never
- * specify a channel either (Pico-8 auto-picks one), and picodiver's own
- * calls never overlap in practice (each is a direct, immediate reaction
- * to a single event, not simultaneous), so a fixed channel is a safe
- * simplification, not a cut fidelity corner. */
-extern const pico_sfx_t picodiver_sfx_0;
-extern const pico_sfx_t picodiver_sfx_1;
-extern const pico_sfx_t picodiver_sfx_2;
+/* Sound effects (docs/sfx-convert-notes.md) -- AYFX, not the earlier
+ * pico_sfx_synth.c attempt (3 separate fixes for the same AY-sharing
+ * conflict all failed to actually resolve it -- see that doc's own "two
+ * rounds, the first fix was wrong" section). games/picodiver/
+ * picodiver_ayfx_bank.c is the EXAMPLE effects bank bundled with the
+ * user's own AYFX resources (next-ayfx-main/example/example.afb, 6
+ * effects, MIT licensed, converted via tools/afb_to_c.py) -- a
+ * PLACEHOLDER, not sounds authored for picodiver specifically, but each
+ * of the 6 has its own real name embedded in the bank (decoded directly
+ * from the file, not guessed): 0=empty 1=gold 2=levelup 3=gameover
+ * 4=key 5=hit, with real sizes 30/29/80/336/74/40 bytes -- "gameover"
+ * was the FIRST pick for the fish-catch sfx below, and its real
+ * ~6-second playback length (confirmed against the bank's own decoded
+ * byte ranges, not assumed) was the actual cause of a real, measured
+ * ZRCP-confirmed framerate drop the user caught by ear ("the music...
+ * slows down when I pick up a fish") -- not a bug in the player, just
+ * an unlucky index pick for a frequent, should-be-brief event. Picked
+ * "gold"/"hit"/"key" instead -- all short (29-74 bytes) and reasonably
+ * on-theme. Revisit once real picodiver-specific effects exist (Shiru's
+ * editor or https://zx.remysharp.com/audio/, same workflow as
+ * sailing-by.aks for music). Mapping (same semantics as the original
+ * cart's own sfx(0)/(1)/(2), docs/sfx-convert-notes.md's earlier
+ * entry): "hit" = a bad hit (score drain), "key" = life lost (oxygen
+ * ran out, not a great thematic match but short), "gold" = caught a
+ * fish (score up, a strong thematic match by luck). */
+#define PICODIVER_SFX_HIT 5
+#define PICODIVER_SFX_LIFE_LOST 4
+#define PICODIVER_SFX_CATCH 1
 
 /* Original Pico-8 Lua cart's own per-tick movement values, kept as their
  * own literal "1" constants -- not folded into a bigger number -- so
@@ -541,8 +554,8 @@ static void objs_update(void) {
         uint8_t removed = 0;
         if (pico_spr_collide(cab_img, cab_x, cab_y, 1, 1,
                               objs[i].sprcur, objs[i].x, objs[i].y, objs[i].wid, objs[i].hi)) {
-            if (objs[i].sprstr <= 66) { score++; pico_sfx_synth_play(&picodiver_sfx_2, 0); }
-            else if (score > 0) { score--; pico_sfx_synth_play(&picodiver_sfx_0, 0); }
+            if (objs[i].sprstr <= 66) { score++; pico_ayfx_play(PICODIVER_SFX_CATCH); }
+            else if (score > 0) { score--; pico_ayfx_play(PICODIVER_SFX_HIT); }
             obj_remove(i);
             removed = 1;
         } else if (objs[i].x >= SCREEN_W) {
@@ -608,7 +621,7 @@ static void oct_update(void) {
         uint8_t hit = pico_spr_collide(cab_img, cab_x, cab_y, 1, 1, 11, oct_x, 32, 1, 1) ||
                       pico_spr_collide(cab_img, cab_x, cab_y, 1, 1, oct_t, oct_x, 40, 1, 1);
         pico_bank_page_out(prev_page);
-        if (hit) { score--; pico_sfx_synth_play(&picodiver_sfx_0, 0); }
+        if (hit) { score--; pico_ayfx_play(PICODIVER_SFX_HIT); }
     }
 }
 
@@ -849,13 +862,21 @@ int main(void) {
 
     titleinit();
 
+    /* AYFX enables Turbosound once, the first time it's used -- doing
+     * that BEFORE starting Arkos's own music, not after, per a real
+     * precedent (AYFX's own README, for NextDAW: "install [the other
+     * driver] first, otherwise you'll hear very bad audio corruption" --
+     * same order-dependency class of problem). Reversed from the first
+     * attempt (music then ayfx), which silenced the music entirely once
+     * Turbosound turned on mid-playback. */
+    pico_ayfx_init();
     pico_music_banked_init(PICODIVER_MUSIC_PAGE, sailing_by_Start, 0);
 
     for (;;) {
         intrinsic_halt(); /* native 50Hz -- confirmed smooth at Stage 1, see docs/picodiver-notes.md */
         pico_input_update();
         pico_music_banked_play_frame(PICODIVER_MUSIC_PAGE);
-        pico_sfx_synth_update();
+        pico_ayfx_frame();
 
         if (mode != MODE_GAME) {
             /* All three static/menu screens (TITLE, DEATH, WIN) share
@@ -967,7 +988,7 @@ int main(void) {
                 if (cab_oxy == 0 && cab_life > 0) {
                     cab_oxy = BUBBLELIMIT;
                     cab_life--;
-                    pico_sfx_synth_play(&picodiver_sfx_1, 0);
+                    pico_ayfx_play(PICODIVER_SFX_LIFE_LOST);
                 }
             }
             frame++;

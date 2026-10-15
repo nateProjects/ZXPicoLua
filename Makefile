@@ -48,15 +48,21 @@ TARGET     := $(BUILD_DIR)/$(GAME)
 # below (fixedtest is pico_trig.c's own first user; no real Arkos
 # content has been authored for this project; games/sfxtest/ is the only
 # pico_sfx_synth.c user so far), same opt-in spirit as BANKED_CSRCS.
-LIB_SRCS := $(filter-out $(LIB_DIR)/pico_music.c $(LIB_DIR)/pico_sfx_synth.c $(LIB_DIR)/pico_trig.c $(LIB_DIR)/pico_music_banked.c,$(wildcard $(LIB_DIR)/*.c))
+LIB_SRCS := $(filter-out $(LIB_DIR)/pico_music.c $(LIB_DIR)/pico_sfx_synth.c $(LIB_DIR)/pico_trig.c $(LIB_DIR)/pico_music_banked.c $(LIB_DIR)/pico_ayfx.c,$(wildcard $(LIB_DIR)/*.c))
 # pico_mul_z80n.asm (2026-10-12): hardware-mul override for classic
 # clib's own generic l_mult/l_mult_u/l_mult_0 -- see that file's own
 # top comment. Passed as a raw source alongside LIB_SRCS so it links
 # unconditionally for every game, same as any lib/*.c module.
 # pico_music_player.asm excluded: it's never linked standalone -- only
 # concatenated into a banked page by the BANKED_MUSIC mechanism below.
-LIB_ASM_SRCS := $(filter-out $(LIB_DIR)/pico_music_player.asm,$(wildcard $(LIB_DIR)/*.asm))
+# pico_ayfx_player.asm excluded: opt-in per game (EXTRA_ASM_SRCS below),
+# same spirit as pico_ayfx.c above -- not every game wants AYFX sfx.
+LIB_ASM_SRCS := $(filter-out $(LIB_DIR)/pico_music_player.asm $(LIB_DIR)/pico_ayfx_player.asm,$(wildcard $(LIB_DIR)/*.asm))
 HEADERS := $(wildcard $(LIB_DIR)/*.h) $(wildcard $(GAME_DIR)/*.h)
+
+# Per-game opt-in raw .asm sources (e.g. pico_ayfx_player.asm) -- linked
+# directly, not through LIB_ASM_SRCS's own unconditional wildcard.
+EXTRA_ASM_SRCS :=
 
 # --- Banked modules (per-game, via lib/pico_bank.h) ---
 # A game lists its own large/rarely-touched const-data .c files (under
@@ -157,14 +163,16 @@ CBANK_picodiver_data := 12
 BANKED_MUSIC_SONG := $(GAME_DIR)/sailing_by_song.asm
 BANKED_MUSIC_PAGE := 14
 LIB_SRCS += $(LIB_DIR)/pico_music_banked.c
-# Sfx (docs/sfx-convert-notes.md) -- the automated converter path, not
-# Arkos (no hand-composed sfx content exists for picodiver; the real
-# cart's own __sfx__ data converts cleanly, see picodiver_sfx.c's own
-# generation comment). Resident, not banked -- tiny (~1-2KB including
-# <psg.h>'s own pulled-in functions, confirmed affordable against the
-# huge margin picodiver_data.c's own banking freed up above, docs/
-# picodiver-notes.md's "Stack/BSS collision" section).
-LIB_SRCS += $(LIB_DIR)/pico_sfx_synth.c
+# Sfx: AYFX (docs/sfx-convert-notes.md), not pico_sfx_synth.c --
+# pico_sfx_synth.c (the automated Pico-8-sfx converter path) was tried
+# first but even moved to its own AY chip it never actually fixed the
+# audible symptom (3 separate attempts, see that doc's own "two rounds,
+# the first fix was wrong" section and its own follow-up); AYFX is a
+# real, separately-authored, shipped effects system (Shiru's format,
+# via the user's own /Users/nat/Code/Games/ayfxResources/), vendored
+# the same way lib/pico_music_player.asm vendors the Arkos player.
+LIB_SRCS += $(LIB_DIR)/pico_ayfx.c
+EXTRA_ASM_SRCS := $(LIB_DIR)/pico_ayfx_player.asm
 else ifeq ($(GAME),bankcalltest)
 # Proves lib/pico_bank.h's page-in/page-out window also works for banked
 # CODE, not just the banked const DATA every other user of this mechanism
@@ -208,7 +216,7 @@ endif
 # linked via that .asm, not as an ordinary resident source -- excluded
 # here so they're not ALSO compiled/linked the normal way too.
 GAME_SRCS := $(filter-out $(patsubst %,$(GAME_DIR)/%.c,$(BANKED_CSRCS)),$(wildcard $(GAME_DIR)/*.c))
-SRCS := $(LIB_SRCS) $(LIB_ASM_SRCS) $(GAME_SRCS)
+SRCS := $(LIB_SRCS) $(LIB_ASM_SRCS) $(EXTRA_ASM_SRCS) $(GAME_SRCS)
 
 # ZEsarUX changes its cwd to inside its own app bundle at launch, so paths
 # passed to it must be absolute, not relative (see dark-room-next's
