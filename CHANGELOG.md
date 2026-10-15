@@ -8,6 +8,24 @@ call site).
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-10-15
+
+### Fixed
+- 0.9.1's fix made sfx worse, not better -- "a click" became "a series
+  of clicks," caught immediately by the user. The real cause: both
+  `pico_sfx_synth` and the Arkos music player rewrite the AY's whole
+  mixer register (R7) unconditionally every tick, each blind to what
+  the other wants on channels it doesn't control -- 0.9.1's "reassert
+  every tick" fix just made this pre-existing conflict fire every frame
+  instead of only at note transitions. Checked Shiru's AYFX driver
+  (user's own `ayfxResources/`) for comparison: same architecture, same
+  documented limitation when sharing a chip with other AY activity. The
+  real fix: `pico_sfx_synth` now runs on the Next's SECOND AY chip via
+  Turbosound (`<arch/zxn.h>`), eliminating the register conflict by
+  construction instead of trying to coordinate it -- no changes needed
+  to the vendored Arkos player. See docs/sfx-convert-notes.md's "two
+  rounds, the first fix was wrong" section.
+
 ## [0.9.1] - 2026-10-15
 
 ### Fixed

@@ -6,7 +6,7 @@ See [`docs/pico8-vs-zxpicolua-reference.md`](docs/pico8-vs-zxpicolua-reference.m
 
 ## Status
 
-Current version: **0.9.1** (pre-1.0, see [CHANGELOG.md](CHANGELOG.md) — [Semantic Versioning](https://semver.org/), no API-stability guarantee yet).
+Current version: **0.9.2** (pre-1.0, see [CHANGELOG.md](CHANGELOG.md) — [Semantic Versioning](https://semver.org/), no API-stability guarantee yet).
 
 The core API is complete: Layer 2 framebuffer access, shape/text primitives, software sprites, keyboard input, math/RNG, tile maps, persistent storage (esxDOS), a hardware tilemap background, and hardware sprites. [PicoDiver](games/picodiver/) is the primary example — a full playable game ported end to end (title screen, gameplay, collision, HUD, scrolling background), not a demo.
 
@@ -57,6 +57,7 @@ Each game lives in its own directory under `games/`, always linked against the s
 - `lib/pico_music.c`/`.h` wraps [z88dk](https://z88dk.org/)'s own bundled [Arkos Tracker](https://www.julien-nevo.com/arkostracker/) player (`support/arkos/`, `<psg/arkos.h>`) — the player itself is (c) Julien "Targhan" Nevo; its sccz80/classic-clib port is maintained in z88dk by ZXjogv. `lib/pico_music_player.asm` (used by the banked path, `lib/pico_music_banked.c`/`.h`) IS a vendored copy of that same player's source — banking it needs a file this project compiles itself, see `docs/music-notes.md`. [PicoDiver](games/picodiver/)'s own background music, `sailing-by.aks`, is the user's own original composition.
 - The collision-mask technique in `pico_map_build_colmask()`/`pico_colbox_at()`, and the decision to recompose music by ear in Arkos Tracker rather than auto-convert it, both follow precedent set by David Crespo's [CelesteNext](https://davidprograma.itch.io/celeste) ([source](https://github.com/dcrespo3d/CelesteNext)), a real shipped Pico-8-to-Next port — see `docs/pico8-vs-zxpicolua-reference.md` and `docs/music-notes.md` for the specifics.
 - `tools/p8_sfx_to_c.py`'s `__sfx__` parsing was cross-checked against [dansanderson/picotool](https://github.com/dansanderson/picotool)'s own cart parser; its pitch-to-frequency formula comes from [zepto8](https://github.com/samhocevar/zepto8) (Sam Hocevar), a byte-accurate Pico-8 reimplementation. Neither is vendored — read for reference only. No sample/test sfx data in the library's own test games is derived from any real cart; `games/sfxtest/` uses a small, self-authored synthetic sfx. [PicoDiver](games/picodiver/)'s own sound effects ARE from a real cart — the author's own original `picodiver2.p8` (same provenance as its map/sprite data above).
+- `pico_sfx_synth.c` running on a separate AY chip from the Arkos music player (`docs/sfx-convert-notes.md`) was worked out by reading [Shiru's AYFX](https://zx.remysharp.com/audio/) driver source (a Next port, read directly, nothing vendored or used here) for comparison after it turned out to share the identical same-chip conflict.
 
 ## License
 

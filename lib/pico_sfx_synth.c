@@ -1,5 +1,6 @@
 #include "pico_sfx_synth.h"
 #include <psg.h>
+#include <arch/zxn.h>
 
 typedef struct {
     const pico_sfx_t *sfx;
@@ -9,6 +10,41 @@ typedef struct {
 } channel_state_t;
 
 static channel_state_t ch_state[3];
+
+/* Runs on the Next's SECOND AY chip (Turbosound), not the first one
+ * lib/pico_music_player.asm's Arkos playback uses -- found the hard way
+ * (docs/sfx-convert-notes.md) that sharing ONE chip doesn't work: both
+ * this module and the Arkos player rewrite the whole mixer register
+ * (AY R7) unconditionally every tick, each blind to what the other
+ * wants on channels it doesn't itself control, producing audible
+ * on/off gating ("a series of clicks") on whichever channels lost that
+ * frame's race. A real, documented AY-sfx-vs-tracker-music conflict,
+ * not unique to this project -- even Shiru's own AYFX driver (for
+ * NextBASIC, read directly: /Users/nat/Code/Games/ayfxResources/
+ * next-ayfx-main/src/ayfx.asm) has the identical limitation on a shared
+ * chip, acknowledged in its own README as "can sometimes become
+ * crunchy." The real fix either system needs is what AYFX's own driver
+ * ALSO supports but defaults away from: a genuinely separate physical
+ * AY chip, not register-level coordination (which would need
+ * cooperation from the vendored, frozen-on-purpose Arkos player to do
+ * safely). z88dk's own <arch/zxn.h> already exposes the Next's
+ * Turbosound chip-select cleanly (IO_TURBOSOUND/IT_SELECT_PSG_n,
+ * confirmed against libsrc/_DEVELOPMENT/target/zxn/config_zxn_private.inc's
+ * own numeric values) -- select chip 1 before this module's own writes,
+ * restore chip 0 immediately after, every time. The vendored Arkos
+ * player itself needs no changes: it never selects a chip explicitly
+ * (written before Turbosound was a consideration), so it always targets
+ * whatever chip is CURRENTLY selected when it runs -- as long as this
+ * module always restores chip 0 before returning, Arkos's own next
+ * per-frame write still lands on chip 0 exactly as before. */
+static uint8_t turbosound_ready = 0;
+
+static void ensure_turbosound(void) {
+    if (turbosound_ready) return;
+    ZXN_WRITE_REG(REG_PERIPHERAL_3,
+                  (uint8_t)(ZXN_READ_REG(REG_PERIPHERAL_3) | RP3_ENABLE_TURBOSOUND));
+    turbosound_ready = 1;
+}
 
 /* psg_tone()/psg_volume() (lib psg.h) take a channel BITMASK (chan0=1,
  * chan1=2, chan2=4), not a 0-2 index -- same shift every call site below
@@ -51,52 +87,60 @@ static void apply_note(uint8_t channel) {
 
 void pico_sfx_synth_play(const pico_sfx_t *sfx, uint8_t channel) {
     if (channel > 2 || sfx->note_count == 0) return;
+    ensure_turbosound();
+    IO_TURBOSOUND = IT_SELECT_PSG_1;
     ch_state[channel].sfx = sfx;
     ch_state[channel].cur_note = 0;
     ch_state[channel].ticks_left = sfx->duration_ticks;
     ch_state[channel].playing = 1;
     apply_note(channel);
+    IO_TURBOSOUND = IT_SELECT_PSG_0;
 }
 
 void pico_sfx_synth_stop(uint8_t channel) {
     if (channel > 2) return;
+    ensure_turbosound();
+    IO_TURBOSOUND = IT_SELECT_PSG_1;
     ch_state[channel].playing = 0;
     psg_volume(chan_bit(channel), 0);
     update_channel_mask();
+    IO_TURBOSOUND = IT_SELECT_PSG_0;
 }
 
 void pico_sfx_synth_update(void) {
     uint8_t c;
+    uint8_t any_active = 0;
+    for (c = 0; c < 3; c++) {
+        if (ch_state[c].playing) { any_active = 1; break; }
+    }
+    /* Nothing playing -- skip touching Turbosound's chip-select state
+     * entirely, not just the AY registers (cheap, and avoids any
+     * window, however brief, where chip 1 stays selected for no
+     * reason). */
+    if (!any_active) return;
+
+    IO_TURBOSOUND = IT_SELECT_PSG_1;
     for (c = 0; c < 3; c++) {
         const pico_sfx_t *sfx;
         if (!ch_state[c].playing) continue;
         if (ch_state[c].ticks_left > 0) {
             ch_state[c].ticks_left--;
-        } else {
-            sfx = ch_state[c].sfx;
-            if (sfx->loop_end > sfx->loop_start && ch_state[c].cur_note == sfx->loop_end) {
-                ch_state[c].cur_note = sfx->loop_start;
-            } else {
-                ch_state[c].cur_note++;
-            }
-            if (ch_state[c].cur_note >= sfx->note_count) {
-                ch_state[c].playing = 0;
-                psg_volume(chan_bit(c), 0);
-                update_channel_mask();
-                continue;
-            }
-            ch_state[c].ticks_left = sfx->duration_ticks;
+            continue;
         }
-        /* Reassert every tick, not just on a note change -- needed once
-         * something else shares the AY chip (lib/pico_music_player.asm's
-         * Arkos playback, which rewrites all 3 channels unconditionally
-         * every frame): without this, a held note was only ever audible
-         * for the single trigger frame before the music player's very
-         * next tick silently reclaimed the channel, heard as a single
-         * "click" instead of the real note duration (found the hard way
-         * -- games/picodiver/, which runs both; games/sfxtest/, which
-         * doesn't, never exposed this). Harmless when nothing else is
-         * sharing the chip -- just a few redundant identical writes. */
+        sfx = ch_state[c].sfx;
+        if (sfx->loop_end > sfx->loop_start && ch_state[c].cur_note == sfx->loop_end) {
+            ch_state[c].cur_note = sfx->loop_start;
+        } else {
+            ch_state[c].cur_note++;
+        }
+        if (ch_state[c].cur_note >= sfx->note_count) {
+            ch_state[c].playing = 0;
+            psg_volume(chan_bit(c), 0);
+            update_channel_mask();
+            continue;
+        }
+        ch_state[c].ticks_left = sfx->duration_ticks;
         apply_note(c);
     }
+    IO_TURBOSOUND = IT_SELECT_PSG_0;
 }

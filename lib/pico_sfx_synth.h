@@ -11,10 +11,18 @@
  * DELIBERATE fidelity losses this accepts to run on real AY hardware:
  * every Pico-8 waveform except noise collapses to a plain square tone (no
  * sine/triangle/sawtooth/ringing/phaser equivalent exists on the AY), and
- * per-note effects (slide/vibrato/drop/fade/arpeggio) are parsed by the
+ *  * per-note effects (slide/vibrato/drop/fade/arpeggio) are parsed by the
  * converter but not yet synthesized -- an affected note still plays, as a
  * static tone/noise at its own pitch and volume, just without the
- * effect's own pitch/volume motion over the note's duration. */
+ * effect's own pitch/volume motion over the note's duration.
+ *
+ * Runs on the Next's SECOND AY chip (Turbosound) if lib/pico_music_banked.c's
+ * Arkos player is also in use -- the two can't safely share one chip (each
+ * rewrites the whole mixer register every tick, blind to the other, real
+ * audible conflict -- see docs/sfx-convert-notes.md's "Real bug found
+ * sharing the AY chip with music" and its follow-up section). Transparent
+ * to the caller -- pico_sfx_synth_play()/stop()/update() handle the
+ * chip-select themselves. */
 
 /* One AY-ready note: ay_period is the 12-bit tone period (psgT()'s own
  * formula, precomputed by the converter -- 0 is never emitted, a silent

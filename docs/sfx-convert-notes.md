@@ -148,31 +148,82 @@ forced trigger (ZRCP memory writes forcing `cab_oxy` to 0 mid-game,
 rather than relying on uncertain simulated keypresses -- see
 `docs/picodiver-notes.md`'s own note on that).
 
-## Real bug found sharing the AY chip with music: a held note audible for one frame only
+## Real bug found sharing the AY chip with music -- two rounds, the first fix was wrong
 
-First playable build produced only "a click" per sfx, not the real held
-note -- confirmed by the user, who'd already heard `games/sfxtest/` play
-correctly standalone (no music running there to interfere). Root cause:
-`pico_sfx_synth_update()` only ever called `apply_note()` (the function
-that actually writes `psg_tone()`/`psg_volume()`) on a note TRANSITION --
-for every other tick of a note's own `duration_ticks`, it just decremented
-a counter and left the AY registers alone, relying on nothing else
-touching them in between. That's fine in isolation (`sfxtest` has nothing
-else writing to the chip), but `pico_music_banked_play_frame()` runs
-*every* frame and (like most tracker players) rewrites all 3 channels'
-registers unconditionally each tick -- so a sustained sfx note was only
-ever actually audible for its own trigger frame; the very next frame's
-music tick silently reclaimed the channel, and `pico_sfx_synth_update()`
-had no reason to fight back until the note-transition boundary, several
-frames later and already too late to matter perceptually. Fixed by
-reasserting the current note's registers every tick an sfx channel is
-playing, not just on transitions -- a few redundant identical AY writes
-per frame when nothing else shares the chip (harmless), but now actually
-correct once something else does. Re-verified via the same `--aofile`
-capture method: a windowed autocorrelation scan now shows long runs
-(15+ consecutive windows) holding the SAME dominant period, consistent
-with a real held note surviving across many frames -- not the single-
-frame spike the bug produced. Whether each individual sfx sounds right
-by ear is still a listening question for the user, same verification
-ceiling as every other AY check in this project -- but it's now at
-least audible for its real duration, not one frame.
+**Round 1 symptom**: first playable build produced only "a click" per
+sfx, not the real held note -- confirmed by the user, who'd already
+heard `games/sfxtest/` play correctly standalone (no music running there
+to interfere). Diagnosed as: `pico_sfx_synth_update()` only ever called
+`apply_note()` (the function that actually writes `psg_tone()`/
+`psg_volume()`) on a note TRANSITION -- for every other tick of a note's
+own `duration_ticks`, it just decremented a counter and left the AY
+registers alone, relying on nothing else touching them in between. True
+in isolation, but `pico_music_banked_play_frame()` rewrites all 3
+channels' registers unconditionally every frame, reclaiming the sfx's
+channel before its own next transition.
+
+**That diagnosis was real but incomplete, and the fix made things worse,
+not better.** Reasserting the note's registers every tick (not just on
+transitions) turned "a click" into "a series of clicks" -- confirmed by
+the user immediately. The actual, deeper cause: `update_channel_mask()`
+(called from `apply_note()`, now running every single tick instead of
+occasionally) rewrites the AY's WHOLE mixer register (R7) from scratch,
+computed ONLY from this module's own 3-channel state -- any channel
+`pico_sfx_synth` isn't actively driving gets its mixer bits forced to
+"disabled," every time. `lib/pico_music_player.asm`'s Arkos playback
+*also* rewrites R7 unconditionally every tick for its own 3 channels,
+with no idea `pico_sfx_synth` exists. Whichever writes R7 last each
+frame wins -- and since `pico_sfx_synth_update()` runs after
+`pico_music_banked_play_frame()`, it always wins, muting whatever
+channels Arkos was using that aren't the sfx's own channel, then
+Arkos re-enables them next frame, repeating at 50Hz. That rapid gating
+IS "a series of clicks." Making `apply_note()` run every tick (round
+1's fix) just made this already-present conflict fire continuously
+instead of only at note transitions.
+
+**This is a known, real, unavoidable limitation of running two
+independent AY-register-writing systems on ONE chip with no
+coordination between them** -- not unique to this project. Checked
+Shiru's AYFX driver for comparison (the user's own
+`/Users/nat/Code/Games/ayfxResources/next-ayfx-main/src/ayfx.asm`,
+real Z80 source, not NextBASIC-locked): its `AFXFRAME` routine has the
+identical shape (an internal shadow mixer/noise byte, written
+unconditionally every frame, blind to anything else using the chip) --
+and its own README documents the same symptom under "Known issues":
+*"if you're playing some music at the same time on the AY channels...
+the sound can sometimes become crunchy. This is the noise mix being
+left on when the AYFX jumps in."* Adopting AYFX on the same chip as
+Arkos music would not have fixed this -- it has the same limitation,
+just differently shaped.
+
+**The real fix, found by reading AYFX's own source**: it supports
+targeting any of the Next's 3 independent AY chips (`ay_chip_select`).
+Running `pico_sfx_synth` on a SEPARATE physical chip from
+`pico_music_banked`'s Arkos playback eliminates the register conflict
+entirely -- not by coordinating who writes what, but by making sure
+they never touch the same hardware registers at all. z88dk's own
+`<arch/zxn.h>` already exposes this (`IO_TURBOSOUND` at port `$FFFD`,
+`IT_SELECT_PSG_0`/`_1`, `RP3_ENABLE_TURBOSOUND` on NextReg `$08` --
+numeric values confirmed against `libsrc/_DEVELOPMENT/target/zxn/
+config_zxn_private.inc`, not just the symbolic names). `pico_sfx_synth`
+now: enables Turbosound once (NextReg `$08` |= `0x02`, read-modify-write
+to preserve other bits), selects PSG chip 1 before its own writes,
+restores chip 0 immediately after -- transparent to the caller, and
+needs ZERO changes to the vendored (frozen-on-purpose) Arkos player,
+which never explicitly selects a chip itself and so always targets
+whichever chip is currently selected when it runs; as long as
+`pico_sfx_synth` always restores chip 0 before returning, Arkos's own
+next per-frame write lands on chip 0 exactly as before. Round 1's
+"reassert every tick" fix was reverted -- no longer needed once nothing
+else shares the chip, AY registers hold their last-written value
+indefinitely on their own.
+
+Verified via the same `--aofile` capture method (real audio output,
+not crashed/silent) -- but this specific "is the clicking really gone"
+question is at the edge of what a crude waveform/autocorrelation check
+can reliably distinguish from normal music+sfx texture (round 1's own
+automated check incorrectly looked like an improvement when it wasn't,
+a real lesson: don't trust automated signal analysis alone for a
+timing-sensitive audible-artifact question like this one -- a listening
+pass is the only real confirmation here, more than for any other AY
+check in this project so far).
