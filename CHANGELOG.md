@@ -8,6 +8,27 @@ call site).
 
 ## [Unreleased]
 
+## [0.10.3] - 2026-10-15
+
+### Fixed
+- 0.10.2's di/ei fix (for song looping) had a severe side effect: it
+  reliably knocked the Next's CPU speed back to its cold-boot default
+  (3.5MHz) instead of the 14MHz `pico_video_init()` sets at startup --
+  confirmed via a direct A/B test and cross-checked against a sibling
+  project without the di/ei change, which reads the speed register
+  correctly. The whole game, not just the music, was running at
+  roughly a quarter speed -- reported by the user as "the song sounds
+  different than in the tracker... maybe reduce the internal tracks."
+  Root mechanism not fully understood, but the fix doesn't need it:
+  `lib/pico_music_banked.c` now re-asserts the correct CPU speed after
+  every call into the di/ei-wrapped player entry points. Measured real
+  frame rate properly this time -- no ZRCP connection during the timed
+  window, since its own overhead distorts the numbers (confirmed
+  unreliable earlier this session too). See docs/music-notes.md's own
+  account, including a genuine, separate, pre-existing ~30fps ceiling
+  (present even in the very first music commit, unrelated to this bug)
+  found along the way and deliberately left alone here.
+
 ## [0.10.2] - 2026-10-15
 
 ### Fixed

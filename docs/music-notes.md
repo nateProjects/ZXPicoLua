@@ -320,3 +320,60 @@ proven unreliable for subtler audible questions more than once). The
 fix matches the documented requirement and the exact failure mode
 precisely enough to ship with real confidence, but genuine confirmation
 needs a real listening pass through at least one full loop.
+
+## The di/ei fix's own real side effect: it silently drops the Next back to 3.5MHz
+
+Shipped the di/ei fix above, then the user reported the music's tempo
+sounded wrong compared to the tracker -- their own first guess was the
+composition itself (too many internal tracks, wrong speed setting).
+Checked `sailing-by.aks`'s own project XML directly (it's a zip-wrapped
+file, unzips to readable XML) first: `<replayFrequencyHz>50</
+replayFrequencyHz>` -- the song genuinely is set to 50Hz, matching this
+project's own one-call-per-frame convention. Not a composition issue.
+
+Measured real frame rate properly instead of guessing -- not via ZRCP
+polling while connected (confirmed unreliable earlier this session,
+its own overhead throttles the emulation), but by launching with NO
+ZRCP connection at all, letting it run completely freely for a fixed
+wall-clock window, then connecting ONLY at the very end for a single
+read of the frame counter. Found a genuinely low rate (~26fps, not
+50). Before concluding picodiver's own code was simply too slow
+(a real, pre-existing, separate question -- see below), checked the
+actually-relevant register directly: **NextReg `$07` (CPU turbo mode)
+read back `$00` (3.5MHz, the Next's cold-boot default) instead of the
+`$03` (28MHz-class write, measured as a real 14MHz) `pico_video_init()`
+explicitly sets at startup.** A direct A/B test (temporarily reverting
+just the di/ei commit, rebuilding, re-checking the register) confirmed
+it precisely: with di/ei, `$00`; without, `$33`/14MHz, every time.
+Cross-checked against a sibling project, Harvester
+(`/Users/nat/Code/Games/harvester`), which shares this exact
+`pico_video.c` line but does NOT have this project's own di/ei change
+(it still uses plain `jp` trampolines) -- Harvester reads `$33`/14MHz
+correctly, strong independent confirmation this is specifically the
+di/ei change's own side effect, not some pre-existing or environmental
+issue.
+
+Root mechanism not fully understood (plausibly some interaction with
+NextZXOS's own interrupt housekeeping noticing the brief di/ei gaps
+and resetting CPU speed as a recovery measure -- not confirmed, just
+the most likely shape given what's observable from outside). The
+practical fix doesn't require understanding the exact mechanism: `lib/
+pico_music_banked.c` now re-writes NextReg `$07` back to `0x03`
+immediately after every call into the di/ei-wrapped player entry
+points (confirmed via ZRCP that this keeps the register correctly
+pinned at `$33` indefinitely, not just momentarily). Cheap -- same
+class of cost as the Turbosound chip-select writes already happening
+in the same file.
+
+**A real, separate finding surfaced along the way, worth not
+conflating with the above**: even with the regression fixed (true
+14MHz confirmed), picodiver's own real frame rate only reached ~33fps,
+not 50 -- and a clean v0.8.0 build (the very first music commit, long
+before any of this session's sfx/di-ei work, confirmed correctly at
+14MHz too) showed the same ~28fps ceiling. This is a genuine,
+pre-existing, SEPARATE per-frame CPU-budget characteristic, not
+something this fix is responsible for and not something fixed here --
+worth a real profiling pass in its own right if more responsiveness is
+wanted, but out of scope for this specific bug (which was about a
+severe, *new* 4x-speed regression, not this smaller, longstanding
+gap).
