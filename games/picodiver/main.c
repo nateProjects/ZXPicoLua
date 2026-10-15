@@ -851,14 +851,37 @@ int main(void) {
     }
     /* Rows 0-3 (above the ocean -- the title/death/win screens' own
      * ship banner lives here, software-drawn over the top, Stage 8)
-     * -- filled with the ocean's own plain deep-water tile (sprite 50,
-     * already defined above) rather than left as undefined tilemap
-     * memory, purely so gameplay's sky strip has no visibly broken/
-     * garbage content behind its icon HUD. Spans the full SCREEN_W/8
-     * columns now, not just the original 16. */
+     * -- filled with the ocean's own plain deep-water tile (sprite 50)
+     * rather than left as undefined tilemap memory, purely so gameplay's
+     * sky strip has no visibly broken/garbage content behind its icon
+     * HUD. Spans the full SCREEN_W/8 columns now, not just the
+     * original 16.
+     *
+     * Recoloured to a lighter blue, NOT left as the ocean's own plain
+     * navy (user feedback, 2026-10-15: the original cart's own
+     * gamedraw() redrew the moving ship banner here every frame during
+     * actual gameplay too, not just on static screens -- confirmed by
+     * reading picodiver2.p8 directly -- giving this strip a visibly
+     * distinct look from the ocean below at all times; this port's own
+     * earlier "draw once per buffer, not every frame" dirty-rect
+     * discipline, Stage 7, made restoring that full per-frame redraw a
+     * real performance tradeoff, not adopted -- but with NO visual
+     * distinction at all here, there was no way to tell when the diver
+     * reached the surface, CAB_Y_SURFACE's own y=32 boundary exactly
+     * where this strip ends). Reusing tile 50's own pattern (a solid
+     * fill of Pico-8 colour 1, confirmed by reading its actual sheet
+     * pixels) under a SECOND palette bank (`attr=1`) that remaps that
+     * same colour index to Pico-8 colour 12 (light blue) instead --
+     * zero new tile data, the hardware tilemap's own per-cell palette
+     * selection is exactly built for this ("zero-cost" recolour, same
+     * mechanism `pico_tilemap_set()`'s own `attr` parameter was always
+     * meant for). Defined once, right after the real Pico-8 palette
+     * itself loads (pico_tilemap_from_map()'s own
+     * pico_tilemap_load_pico8_palette() call, just above). */
+    pico_tilemap_set_color(17, 1, 5, 7); /* attr=1, pixel=1 -> Pico-8 colour 12 (light blue), matches pico8_palette[12] in lib/pico_palette.c */
     for (row = 0; row < 4; row++)
         for (col = 0; col < SCREEN_W / 8; col++)
-            pico_tilemap_set((uint8_t)(TILE_ORIGIN_COL + col), (uint8_t)(TILE_ORIGIN_ROW + row), 50, 0);
+            pico_tilemap_set((uint8_t)(TILE_ORIGIN_COL + col), (uint8_t)(TILE_ORIGIN_ROW + row), 50, 1);
 
     titleinit();
 

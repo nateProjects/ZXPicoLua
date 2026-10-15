@@ -8,6 +8,20 @@ call site).
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-10-15
+
+### Added
+- A visible surface indicator in PicoDiver -- the sky strip above the
+  ocean (rows 0-3) is now a light blue, distinct from the ocean's own
+  navy, so the player can tell when they've reached the surface
+  (`CAB_Y_SURFACE`). The original cart kept its moving ship banner
+  visible during gameplay for the same purpose; this port's own
+  dirty-rect discipline makes that a real performance tradeoff, so used
+  the hardware tilemap's own per-cell palette selection instead (a
+  second palette bank remapping the same tile's colour, zero new tile
+  data) -- a cheaper fix for the same problem. See
+  docs/picodiver-notes.md's "Surface indicator" section.
+
 ## [0.10.0] - 2026-10-15
 
 ### Changed

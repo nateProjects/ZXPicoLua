@@ -429,6 +429,39 @@ the *link-time* budget alone isn't sufficient confirmation; a live `SP`
 reading on at least one build is cheap insurance once a game's resident
 margin gets this tight.
 
+## Surface indicator (2026-10-15)
+
+User feedback after playing with real audio for the first time: "there
+is no above surface (as there was in the original) so its not clear in
+the game when the diver reaches the surface." Checked the real cart
+directly (`picodiver2.p8`'s own `gamedraw()`) -- the original redraws
+its moving ship banner every frame during actual gameplay, not just on
+static screens, giving the top of the screen a persistent, visually
+distinct look at all times. This port's own `ship_show()` only runs on
+the static title/death/win screens (Stage 8's own "draw once per buffer,
+not every frame" dirty-rect discipline -- full per-frame redraw of a
+32px-tall banner across the wider canvas was a real, deliberate
+performance tradeoff, not revisited here). Restoring the moving ships
+during gameplay isn't a quick change; the user's own ask was narrower
+anyway ("a lighter blue would help") and didn't request the ships back.
+
+Fixed cheaply using the hardware tilemap's own per-cell palette
+selection (`pico_tilemap_set()`'s `attr` parameter, 0-15, the tile
+pattern's pixel value's high nibble into a 256-entry palette) --
+the same mechanism this project's own `pico_tilemap.h` already
+documents, just not previously used for more than the single default
+bank. Tile 50 (the plain deep-water fill used for the sky-strip rows
+above the real ocean, rows 0-3 in tile coordinates) is a solid fill of
+Pico-8 colour 1 (confirmed by reading its actual sheet pixels, not
+assumed). Defined a second palette entry at index 17 (`attr=1,
+pixel=1`) mapping that same colour slot to Pico-8 colour 12 (light
+blue) instead, and changed just that one fill loop's `attr` argument
+from 0 to 1 -- zero new tile data, a real "zero-cost" recolour.
+Verified via screenshot: a sharp, bright boundary exactly at `y=32`
+(`CAB_Y_SURFACE`), HUD icons still readable on top, title/death/win
+screens unaffected (their own `ship_show()` sprites fully cover that
+strip regardless of the tilemap colour underneath).
+
 ## Deliberately not ported
 
 - The JS port's own "canvas tainted" `sget()` warning -- a workaround for
