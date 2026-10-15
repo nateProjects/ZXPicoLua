@@ -72,21 +72,31 @@ void pico_sfx_synth_update(void) {
         if (!ch_state[c].playing) continue;
         if (ch_state[c].ticks_left > 0) {
             ch_state[c].ticks_left--;
-            continue;
-        }
-        sfx = ch_state[c].sfx;
-        if (sfx->loop_end > sfx->loop_start && ch_state[c].cur_note == sfx->loop_end) {
-            ch_state[c].cur_note = sfx->loop_start;
         } else {
-            ch_state[c].cur_note++;
+            sfx = ch_state[c].sfx;
+            if (sfx->loop_end > sfx->loop_start && ch_state[c].cur_note == sfx->loop_end) {
+                ch_state[c].cur_note = sfx->loop_start;
+            } else {
+                ch_state[c].cur_note++;
+            }
+            if (ch_state[c].cur_note >= sfx->note_count) {
+                ch_state[c].playing = 0;
+                psg_volume(chan_bit(c), 0);
+                update_channel_mask();
+                continue;
+            }
+            ch_state[c].ticks_left = sfx->duration_ticks;
         }
-        if (ch_state[c].cur_note >= sfx->note_count) {
-            ch_state[c].playing = 0;
-            psg_volume(chan_bit(c), 0);
-            update_channel_mask();
-            continue;
-        }
-        ch_state[c].ticks_left = sfx->duration_ticks;
+        /* Reassert every tick, not just on a note change -- needed once
+         * something else shares the AY chip (lib/pico_music_player.asm's
+         * Arkos playback, which rewrites all 3 channels unconditionally
+         * every frame): without this, a held note was only ever audible
+         * for the single trigger frame before the music player's very
+         * next tick silently reclaimed the channel, heard as a single
+         * "click" instead of the real note duration (found the hard way
+         * -- games/picodiver/, which runs both; games/sfxtest/, which
+         * doesn't, never exposed this). Harmless when nothing else is
+         * sharing the chip -- just a few redundant identical writes. */
         apply_note(c);
     }
 }

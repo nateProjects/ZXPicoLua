@@ -8,6 +8,23 @@ call site).
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-10-15
+
+### Fixed
+- `lib/pico_sfx_synth.c` sound effects only played for a single frame
+  ("a click") in PicoDiver, despite working correctly standalone in
+  `games/sfxtest/` -- user caught it immediately after 0.9.0 shipped.
+  `pico_sfx_synth_update()` only rewrote AY registers on a note
+  transition, relying on nothing else touching the chip in between; fine
+  in isolation, broken once real background music (`pico_music_banked.c`)
+  shares the chip and rewrites all 3 channels every single frame as part
+  of its own normal playback, reclaiming the sfx's channel before its
+  own next transition. Fixed by reasserting the current note's registers
+  every tick a channel is playing, not just on change. Re-verified via
+  waveform capture: sustained same-period runs across many frames now,
+  not a one-frame spike. See docs/sfx-convert-notes.md's "Real bug found
+  sharing the AY chip with music" section.
+
 ## [0.9.0] - 2026-10-15
 
 ### Added

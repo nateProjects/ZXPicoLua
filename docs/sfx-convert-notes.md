@@ -143,16 +143,36 @@ measured against a build with far less headroom). Cost this time:
 leaving over 6000 bytes of margin.
 
 Plays alongside the real Arkos background music (`docs/music-notes.md`)
-on the same AY chip -- `pico_sfx_synth_update()` runs right after
-`pico_music_banked_play_frame()` each frame, so an active sfx on channel
-0 simply overrides whatever the music player wrote to that channel that
-frame, the same way Pico-8's own `sfx(n)` briefly takes over a channel
-from `music()`. Verified via a `zesarux --aofile` capture spanning a
+on the same AY chip. Verified via a `zesarux --aofile` capture spanning a
 forced trigger (ZRCP memory writes forcing `cab_oxy` to 0 mid-game,
 rather than relying on uncertain simulated keypresses -- see
-`docs/picodiver-notes.md`'s own note on that): a windowed autocorrelation
-scan of the capture shows the dominant AY period changing repeatedly and
-substantially throughout, consistent with real, dynamic output (not a
-frozen or silent chip) -- confirms the pipeline genuinely runs, same
-verification ceiling as every other AY check in this project; whether
-each individual sfx sounds right is a listening question for the user.
+`docs/picodiver-notes.md`'s own note on that).
+
+## Real bug found sharing the AY chip with music: a held note audible for one frame only
+
+First playable build produced only "a click" per sfx, not the real held
+note -- confirmed by the user, who'd already heard `games/sfxtest/` play
+correctly standalone (no music running there to interfere). Root cause:
+`pico_sfx_synth_update()` only ever called `apply_note()` (the function
+that actually writes `psg_tone()`/`psg_volume()`) on a note TRANSITION --
+for every other tick of a note's own `duration_ticks`, it just decremented
+a counter and left the AY registers alone, relying on nothing else
+touching them in between. That's fine in isolation (`sfxtest` has nothing
+else writing to the chip), but `pico_music_banked_play_frame()` runs
+*every* frame and (like most tracker players) rewrites all 3 channels'
+registers unconditionally each tick -- so a sustained sfx note was only
+ever actually audible for its own trigger frame; the very next frame's
+music tick silently reclaimed the channel, and `pico_sfx_synth_update()`
+had no reason to fight back until the note-transition boundary, several
+frames later and already too late to matter perceptually. Fixed by
+reasserting the current note's registers every tick an sfx channel is
+playing, not just on transitions -- a few redundant identical AY writes
+per frame when nothing else shares the chip (harmless), but now actually
+correct once something else does. Re-verified via the same `--aofile`
+capture method: a windowed autocorrelation scan now shows long runs
+(15+ consecutive windows) holding the SAME dominant period, consistent
+with a real held note surviving across many frames -- not the single-
+frame spike the bug produced. Whether each individual sfx sounds right
+by ear is still a listening question for the user, same verification
+ceiling as every other AY check in this project -- but it's now at
+least audible for its real duration, not one frame.
