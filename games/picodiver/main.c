@@ -294,6 +294,7 @@
 #include "pico_math.h"
 #include "pico_bank.h"
 #include "pico_music_banked.h"
+#include "pico_sfx_synth.h"
 #include "picodiver_data.h"
 
 /* Real background music (docs/music-notes.md) -- sailing_by_song.asm's
@@ -304,6 +305,22 @@
  * --labelPrefix (tools/arkos_song_to_asm.py's own comment). */
 #define PICODIVER_MUSIC_PAGE 14
 extern uint8_t sailing_by_Start[];
+
+/* Sound effects (docs/sfx-convert-notes.md) -- games/picodiver/picodiver_sfx.c,
+ * converted directly from the real cart's own __sfx__ data (picodiver2.p8,
+ * sfx 0/1/2 -- the only 3 of the original's 5 sfx() call sites ever use,
+ * confirmed by reading the cart source). Resident (not banked -- tiny).
+ * Mapping, read off the original cart directly (docs/reference doesn't
+ * cover audio): sfx(0) = a bad hit (octopus or creature, score drain),
+ * sfx(1) = life lost (oxygen ran out), sfx(2) = caught a fish (score up).
+ * All three play on channel 0 -- the original's own sfx(n) calls never
+ * specify a channel either (Pico-8 auto-picks one), and picodiver's own
+ * calls never overlap in practice (each is a direct, immediate reaction
+ * to a single event, not simultaneous), so a fixed channel is a safe
+ * simplification, not a cut fidelity corner. */
+extern const pico_sfx_t picodiver_sfx_0;
+extern const pico_sfx_t picodiver_sfx_1;
+extern const pico_sfx_t picodiver_sfx_2;
 
 /* Original Pico-8 Lua cart's own per-tick movement values, kept as their
  * own literal "1" constants -- not folded into a bigger number -- so
@@ -524,8 +541,8 @@ static void objs_update(void) {
         uint8_t removed = 0;
         if (pico_spr_collide(cab_img, cab_x, cab_y, 1, 1,
                               objs[i].sprcur, objs[i].x, objs[i].y, objs[i].wid, objs[i].hi)) {
-            if (objs[i].sprstr <= 66) score++;
-            else if (score > 0) score--;
+            if (objs[i].sprstr <= 66) { score++; pico_sfx_synth_play(&picodiver_sfx_2, 0); }
+            else if (score > 0) { score--; pico_sfx_synth_play(&picodiver_sfx_0, 0); }
             obj_remove(i);
             removed = 1;
         } else if (objs[i].x >= SCREEN_W) {
@@ -591,7 +608,7 @@ static void oct_update(void) {
         uint8_t hit = pico_spr_collide(cab_img, cab_x, cab_y, 1, 1, 11, oct_x, 32, 1, 1) ||
                       pico_spr_collide(cab_img, cab_x, cab_y, 1, 1, oct_t, oct_x, 40, 1, 1);
         pico_bank_page_out(prev_page);
-        if (hit) score--;
+        if (hit) { score--; pico_sfx_synth_play(&picodiver_sfx_0, 0); }
     }
 }
 
@@ -838,6 +855,7 @@ int main(void) {
         intrinsic_halt(); /* native 50Hz -- confirmed smooth at Stage 1, see docs/picodiver-notes.md */
         pico_input_update();
         pico_music_banked_play_frame(PICODIVER_MUSIC_PAGE);
+        pico_sfx_synth_update();
 
         if (mode != MODE_GAME) {
             /* All three static/menu screens (TITLE, DEATH, WIN) share
@@ -949,6 +967,7 @@ int main(void) {
                 if (cab_oxy == 0 && cab_life > 0) {
                     cab_oxy = BUBBLELIMIT;
                     cab_life--;
+                    pico_sfx_synth_play(&picodiver_sfx_1, 0);
                 }
             }
             frame++;

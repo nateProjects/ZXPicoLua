@@ -157,6 +157,14 @@ CBANK_picodiver_data := 12
 BANKED_MUSIC_SONG := $(GAME_DIR)/sailing_by_song.asm
 BANKED_MUSIC_PAGE := 14
 LIB_SRCS += $(LIB_DIR)/pico_music_banked.c
+# Sfx (docs/sfx-convert-notes.md) -- the automated converter path, not
+# Arkos (no hand-composed sfx content exists for picodiver; the real
+# cart's own __sfx__ data converts cleanly, see picodiver_sfx.c's own
+# generation comment). Resident, not banked -- tiny (~1-2KB including
+# <psg.h>'s own pulled-in functions, confirmed affordable against the
+# huge margin picodiver_data.c's own banking freed up above, docs/
+# picodiver-notes.md's "Stack/BSS collision" section).
+LIB_SRCS += $(LIB_DIR)/pico_sfx_synth.c
 else ifeq ($(GAME),bankcalltest)
 # Proves lib/pico_bank.h's page-in/page-out window also works for banked
 # CODE, not just the banked const DATA every other user of this mechanism

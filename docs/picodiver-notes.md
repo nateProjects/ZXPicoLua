@@ -431,7 +431,6 @@ margin gets this tight.
 
 ## Deliberately not ported
 
-- `sfx(n)` -- all 5 call sites skipped. No audio API in this library yet.
 - The JS port's own "canvas tainted" `sget()` warning -- a workaround for
   a browser-only failure mode (opening via `file://`) with no equivalent
   here; `pico_sget()` always works.

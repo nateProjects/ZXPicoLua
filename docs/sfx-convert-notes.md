@@ -117,3 +117,42 @@ Opt into `pico_sfx_synth.c` in the Makefile the same way `games/sfxtest/`
 does (`LIB_SRCS += $(LIB_DIR)/pico_sfx_synth.c` in that game's own `ifeq`
 block) -- it's excluded by default for the same resident-budget reason as
 `pico_music.c`.
+
+## Shipped in PicoDiver for real (2026-10-15)
+
+PicoDiver's own `sfx(n)` call sites (5 in the original cart, collapsing
+to 3 distinct sounds -- `docs/picodiver-notes.md`'s "Deliberately not
+ported" list had these marked skipped since the port's very first
+milestone) are wired up for real now, converted directly from the real
+cart's own `__sfx__` data (`/Users/nat/Code/Pico-8/PicoDiver/picodiver2.p8`,
+sfx 0/1/2 -- confirmed by reading every `sfx()` call site in the cart
+source, not guessed): `games/picodiver/picodiver_sfx.c`. Mapping (read
+off the cart directly, no `docs/reference` for audio existed before
+this): sfx(0) = a bad hit (octopus or creature, score drain), sfx(1) =
+life lost (oxygen ran out), sfx(2) = caught a fish (score up). All three
+converted with zero warnings (no per-note effects, no custom waveforms
+in any of the three -- full fidelity, not the lower-fidelity fallback
+path this doc warns about above).
+
+Resident, not banked -- affordable now that `picodiver_data.c`'s own
+banking (`docs/picodiver-notes.md`'s "Stack/BSS collision" section)
+freed up thousands of bytes of margin; the historical "707 bytes over"
+finding above no longer applies to picodiver specifically (it was
+measured against a build with far less headroom). Cost this time:
+`BSS_END_tail` moved from `$E0C6` to `$E849`, ~1923 bytes -- still
+leaving over 6000 bytes of margin.
+
+Plays alongside the real Arkos background music (`docs/music-notes.md`)
+on the same AY chip -- `pico_sfx_synth_update()` runs right after
+`pico_music_banked_play_frame()` each frame, so an active sfx on channel
+0 simply overrides whatever the music player wrote to that channel that
+frame, the same way Pico-8's own `sfx(n)` briefly takes over a channel
+from `music()`. Verified via a `zesarux --aofile` capture spanning a
+forced trigger (ZRCP memory writes forcing `cab_oxy` to 0 mid-game,
+rather than relying on uncertain simulated keypresses -- see
+`docs/picodiver-notes.md`'s own note on that): a windowed autocorrelation
+scan of the capture shows the dominant AY period changing repeatedly and
+substantially throughout, consistent with real, dynamic output (not a
+frozen or silent chip) -- confirms the pipeline genuinely runs, same
+verification ceiling as every other AY check in this project; whether
+each individual sfx sounds right is a listening question for the user.

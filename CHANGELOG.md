@@ -8,6 +8,26 @@ call site).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-15
+
+### Added
+- Real sound effects in PicoDiver -- the original cart's `sfx(n)` call
+  sites (5, collapsing to 3 distinct sounds: a bad hit, life lost, fish
+  caught) were skipped since the port's very first milestone. Converted
+  directly from the real cart's own `__sfx__` data
+  (`games/picodiver/picodiver_sfx.c`, via `tools/p8_sfx_to_c.py`, zero
+  warnings -- no effects or custom waveforms in any of the three sfx).
+  Opts into `pico_sfx_synth.c` (resident, not banked -- affordable now
+  that 0.8.1's sprite-data banking freed up thousands of bytes of
+  margin). Plays alongside the real Arkos background music on the same
+  AY chip; an active sfx simply overrides whatever the music wrote to
+  its channel that frame, matching Pico-8's own `sfx()`/`music()`
+  interaction. Verified via a `zesarux --aofile` capture around a forced
+  trigger (ZRCP memory writes, not simulated keypresses) showing the
+  dominant AY period shifting repeatedly -- confirms real, dynamic
+  output. See `docs/sfx-convert-notes.md`'s "Shipped in PicoDiver for
+  real" section.
+
 ## [0.8.2] - 2026-10-14
 
 ### Fixed
