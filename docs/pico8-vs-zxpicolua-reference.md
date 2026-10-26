@@ -77,7 +77,7 @@ if (pico_btn(PICO_BTN_LEFT)) { cab_dr = 0; cab_x = (int16_t)(cab_x - 1 * PICO_SP
 | `line(x0,y0,x1,y1,[c])` | `pico_line(x0,y0,x1,y1,c)` | `c` or `PICO_CURRENT_COLOR` |
 | `circ`/`circfill` | `pico_circ`/`pico_circfill` | explicit `c` only |
 | `oval`/`ovalfill` | `pico_oval`/`pico_ovalfill` | explicit `c` only; args are the bounding box, same as Pico-8 |
-| `fillp(pattern)` | `pico_fillp(pattern, transparent)` | the fractional/transparent trick (`fillp(p + 0x0.8)`) is its own explicit bool argument instead |
+| `fillp(pattern)` | `pico_fillp(pattern, transparent)` | the fractional/transparent trick (`fillp(p + 0x0.8)`) is its own explicit bool argument instead; `pico_fillp_fix(p)` takes a real packed Pico-8 number directly (matching a cart's own literal `fillp(p)` call sites) and decodes into the two-argument form for you |
 | `camera(x,y)` | `pico_camera(x,y)` | offsets `pico_gfx.c`'s shapes/text only -- not sprites, not raw pset/cls (see `lib/pico_gfx.h`) |
 | `clip(x,y,w,h)` | `pico_clip(x0,y0,x1,y1)` | inclusive corners, not width/height -- `clip(x,y,w,h)` becomes `pico_clip(x,y,x+w-1,y+h-1)`; same `pico_gfx.c`-only scope as `camera()`; no implicit reset-on-empty-args, call `pico_clip_reset()` |
 | `cursor(x,y)` | `pico_cursor(x,y)` | |

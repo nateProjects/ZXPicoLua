@@ -56,6 +56,18 @@ static void draw(void) {
     pico_print("real clock)", 2, 64, 5);
 }
 
+/* Redrawing the UI (pico_cls() + print()s) is NOT free -- measured at
+ * ~32ms/call for pico_cls() alone even after picodiver's own batching
+ * fixes (docs/picodiver-notes.md), a real, already-documented sccz80
+ * codegen cost, not a bug. Doing that every single halt was this tool's
+ * OWN bottleneck, not the music player's: an earlier investigation here
+ * mistook the resulting ~6-9fps for a real Arkos playback slowdown on a
+ * demanding song, when isolating play_frame() alone (no UI redraw) measured
+ * a genuine ~50-60fps -- the player was always fine. Since `seconds` only
+ * changes once every 50 frames anyway, the UI only needs to repaint that
+ * often; play_frame() still runs every single halt, at full real tempo. */
+#define AKGPLAY_UI_REDRAW_INTERVAL 50
+
 int main(void) {
     intrinsic_ei();
     pico_video_init(128, 128);
@@ -65,8 +77,10 @@ int main(void) {
         intrinsic_halt();
         pico_music_banked_play_frame(AKGPLAY_MUSIC_PAGE);
         frame++;
-        if (frame % 50 == 0) seconds++;
-        draw();
-        pico_flip();
+        if (frame % AKGPLAY_UI_REDRAW_INTERVAL == 0) {
+            seconds++;
+            draw();
+            pico_flip();
+        }
     }
 }

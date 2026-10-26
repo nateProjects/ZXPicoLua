@@ -8,6 +8,36 @@ call site).
 
 ## [Unreleased]
 
+### Added
+- `pico_fillp_fix(p)` (`lib/pico_gfx.c`/`.h`) -- takes a real packed
+  Pico-8 number (the same convention `fillp(pattern + 0x0.8)` uses in a
+  real cart) and decodes it into `pico_fillp()`'s own clearer two-
+  argument form, so a ported cart's literal `fillp(p)` call sites can be
+  translated mechanically. See docs/gfx-notes.md.
+- `lib/pico_stack.c`/`.h` -- a runtime stack-headroom check
+  (`pico_stack_margin()`/`pico_stack_low()`) against z88dk classic
+  crt0's own `__BSS_END_tail` linker symbol, so a real stack/BSS
+  collision (the "tentacle trail" bug, v0.8.1) can be caught by a
+  one-line per-frame call instead of a dedicated ZRCP session. In the
+  default `LIB_SRCS` wildcard, no opt-in needed. Idea credited to
+  pocket-aot's own `p8_stack_check()`. See docs/picodiver-notes.md.
+
+### Fixed
+- `games/akgplay/` itself (not the music player) was the cause of a
+  severe apparent playback slowdown (~6-10fps instead of ~50) on a
+  CPU-heavier test track, and a smaller version of the same thing
+  (~30fps) on `sailing-by.aks`: its own loop redrew the UI (`pico_cls()`
+  + several `pico_print()` calls, a real ~32ms/call cost per
+  `docs/picodiver-notes.md`) on every single frame, even though the
+  only thing it ever draws (a frame/seconds counter) only changes once
+  every 50 frames. The Arkos player itself was correct the whole time
+  (confirmed: isolated alone it measured ~61fps, faster than expected).
+  UI redraw now gated behind the same 50-frame interval `seconds`
+  already used; music still plays every halt at full tempo. Both
+  tracks now measure ~44fps. See docs/music-notes.md for the full
+  investigation and the dead ends (bank page, di/ei, turbo mode) it
+  ruled out along the way.
+
 ## [0.11.0] - 2026-10-15
 
 ### Added

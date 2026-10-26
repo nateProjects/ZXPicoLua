@@ -65,6 +65,45 @@ clock, 1773400Hz, divided by 16) -- reused rather than re-derived.
   * 15/7)`) -- no attempt at matching Pico-8's own (likely non-linear,
   perceptual) volume curve.
 
+## Reference for when per-note effect synthesis is actually attempted
+
+Not needed for v1 (effects are warned-about and skipped, see above), but
+worth capturing now rather than re-deriving later: fake-08 (a C++ PICO-8
+player targeting weak embedded handhelds, porting zepto8's own audio
+code) documents several PICO-8 sound-chip quirks in its own source
+comments that aren't written down anywhere official -- reverse-engineered
+by zepto8 from captured PICO-8 WAV exports, not from PICO-8's own source.
+Useful cross-reference the day real per-tick effect synthesis is built:
+
+- **Noise instrument is NOT flat white noise** -- it's low-pass filtered,
+  and the cutoff is frequency-dependent: `new_sample = (last_sample +
+  scale*rand()) / (1+scale)`, where `scale` scales with how fast the
+  note's phase is advancing (roughly `22050 / key_to_freq(63)`, ≈8.859,
+  as the reference point). A literal AY noise-generator mapping would
+  miss this entirely -- expected, see the "every waveform except noise
+  collapses to AY square" limitation above, but worth knowing the AY's
+  own noise generator isn't a faithful substitute for Pico-8's "noise"
+  waveform either, if that's ever revisited.
+- **Phaser is two triangle waves at a pitch-DEPENDENT detune ratio**, not
+  a fixed one -- even zepto8's own comment admits it's not fully solved
+  ("ratio... seems to be around 110 for c2 but 97 for c0 and 127 for c5,
+  not sure how to adjust").
+- **Arpeggio speed halves when the sfx's own speed is <= 8** (straight
+  from Pico-8's own docs, easy to miss) -- and it cycles within fixed
+  4-note groups (`(note_id & ~3) | (n & 3)`), not a sliding 4-note window.
+- **Slide's implicit default "previous key"**, needed when a note slides
+  starting from the very first note of an sfx (no actual previous note to
+  slide from): inferred as 24 -- starting a slide on C-2 (key 24)
+  produces no audible pitch change in real Pico-8, which only makes sense
+  if 24 is the undocumented default.
+
+None of this affects the current converter (effects stay skipped-with-
+warning), but it means "port zepto8's `update_sfx_state()`" -- the
+future-work note above -- isn't just a mechanical translation; these four
+behaviours are exactly the parts that look like inconsistent special
+cases (frequency-dependent noise cutoff, pitch-dependent phaser ratio) if
+re-derived from scratch rather than cross-checked against this.
+
 ## Verified: real AY output, not just "the converter ran and produced plausible numbers"
 
 `games/sfxtest/` (`GAME=sfxtest`) plays a real converted sfx

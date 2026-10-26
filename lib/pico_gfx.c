@@ -29,6 +29,12 @@ void pico_fillp(uint16_t pattern, uint8_t transparent) {
     fill_pattern_transparent = transparent;
 }
 
+void pico_fillp_fix(pico_fix_t p) {
+    uint16_t pattern = (uint16_t)((uint32_t)p >> 16);
+    uint8_t transparent = (uint8_t)(((uint32_t)p >> 15) & 1);
+    pico_fillp(pattern, transparent);
+}
+
 static uint8_t fillp_bit_on(uint8_t x, uint8_t y) {
     uint8_t cell_x, cell_y, bit_index;
     if (fill_pattern == 0) return 0;

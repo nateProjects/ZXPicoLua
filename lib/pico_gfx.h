@@ -2,6 +2,7 @@
 #define PICO_GFX_H
 
 #include <stdint.h>
+#include "pico_math.h"
 
 /* Shape/text primitives, built entirely on pico_pset()/pico_pget()
  * (pico_video.h) -- no direct hardware access here, same "correctness
@@ -55,6 +56,21 @@ void pico_color(uint8_t c);
  * syntax), spelled as a separate explicit argument instead, for the same
  * reason colour arguments aren't optional here. */
 void pico_fillp(uint16_t pattern, uint8_t transparent);
+
+/* pico_fillp_fix(p) -- for mechanically porting a cart's own literal
+ * `fillp(p)` call sites (a real Pico-8 number, not a separate
+ * pattern/transparent pair) without hand-decoding each one: splits p's
+ * raw Q16.16 bits the same way real Pico-8 does -- the pattern is the
+ * integer part (p's own upper 16 bits), and transparent is bit 15 of the
+ * fractional part (the manual's `fillp(p + 0x0.8)` convention, i.e. the
+ * fraction's own top bit) -- then calls pico_fillp() above. Confirmed
+ * against an independent PICO-8 reimplementation (pocket-aot's own
+ * `fillp` native: `(pattern<<16)|transparent_flag(0x8000)`), not just
+ * the manual text. Only exists for porting convenience -- hand-authored
+ * C call sites should keep using pico_fillp()'s own clearer two-argument
+ * form directly, same reasoning as pico_color()/PICO_CURRENT_COLOR
+ * above. */
+void pico_fillp_fix(pico_fix_t p);
 
 /* rectfill/rect: (x0,y0)-(x1,y1) are inclusive corners, any order. color's
  * low nibble is the fill's "off"/primary colour; if fillp() has a pattern

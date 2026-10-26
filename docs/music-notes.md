@@ -411,3 +411,98 @@ point `BANKED_MUSIC_SONG` (this game's own `ifeq` block) at the new
 the same committed `sailing-by.aks` content PicoDiver uses (its own
 copy of `sailing_by_song.asm`, not a cross-game reference) -- the only
 real Arkos content currently committed to this project.
+
+## A severe "playback is slow" bug that turned out to be in `akgplay`, not the player
+
+A later session tried a different, more demanding track ("Lop Ears",
+renamed `Other-Song-Sample.aks` -- same content, confirmed via MD5;
+the user confirmed it's public domain and fine to use for this kind of
+test) through `akgplay` and measured a real, severe, reproducible
+slowdown: ~6-10fps, vs. an expected ~50. `sailing-by.aks` itself showed
+a smaller version of the same thing (~30fps instead of 50, already
+documented above as a "genuine, pre-existing, separate" gap -- that
+framing turned out to be wrong, see below).
+
+The investigation chased several real-looking but ultimately irrelevant
+leads before finding the actual cause, each ruled out by direct
+measurement, not assumption:
+
+- **Physical bank page** (14, used here, vs. 16, 17, 31 (Harvester), 60
+  (Dark Room Next)). Tried 14/16/17 directly in this project (31/60
+  crashed outright -- untested pages, expected per `pico_bank.h`'s own
+  caution) -- all three measured the same ~6fps. Page choice is not the
+  variable.
+- **The music player's own di/ei wrapping** (the turbo-mode regression
+  fixed earlier on this page). Temporarily reverted di/ei entirely,
+  rebuilt, remeasured: ~6fps either way. Not the cause.
+- **CPU turbo mode flipping back to 3.5MHz mid-session** (a plausible
+  extension of the di/ei regression, since drawing code -- see below --
+  *also* wraps MMU writes in di/ei). Polled NextReg `$07` repeatedly via
+  ZRCP during steady-state playback: it held at `$33`/14MHz throughout,
+  never flickered. The CPU speed was never wrong during this bug.
+- **The song itself being too demanding for this project's single-chip
+  banked setup** -- the working theory for most of the investigation,
+  and the most plausible-sounding one, given the user's own report that
+  it sounded 2-4x slower than in the tracker. Falsified by isolating
+  `pico_music_banked_play_frame()` alone, with the UI/`draw()` call
+  removed from the loop entirely: ~61fps -- *faster* than the expected
+  50, not slower. The player was correct the whole time, for both
+  songs.
+
+**The real cause**: `akgplay`'s own loop called `draw()`
+(`pico_cls()` + five `pico_print()` calls) unconditionally on every
+single `intrinsic_halt()`. `docs/picodiver-notes.md` already measured
+`pico_cls()` alone at ~32ms/call *after* picodiver's own batching
+fixes -- a real, already-documented, accepted sccz80-codegen cost, not
+a bug in itself. Isolating `draw()` alone (no music at all) reproduced
+the same ~6-25fps ceiling this investigation was chasing, with zero
+Arkos code involved. Repainting a UI whose only dynamic content (a
+`frame`/`seconds` counter) changes once every 50 frames, every single
+frame, was pure waste -- and happened to be just slow enough, *scaled
+by the fixed per-call cost against whatever work also needed to fit in
+one 20ms tick*, that a cheap song's modest total (~30fps) and a
+cpu-heavier song's total (~6-10fps) both looked like real,
+song-dependent playback problems from the outside, despite neither one
+actually being that.
+
+**Why Harvester and Dark Room Next never hit this**: both render
+mostly via hardware tilemap + hardware sprites (near-zero per-frame CPU
+cost); Layer 2 there is reserved for occasional HUD repaints, not a
+full clear-and-reprint every single frame. They were never exercising
+the slow path this bug lived in, regardless of which song or bank page
+they used -- which is exactly why cross-checking against them (same
+player, same song, same mechanism, correct speed) kept ruling out every
+player/banking-side hypothesis without ever pointing at the real one.
+
+**The fix** (`games/akgplay/main.c`): `pico_music_banked_play_frame()`
+still runs on every single halt, at full real tempo -- only `draw()`/
+`pico_flip()` moved behind the same `frame % 50 == 0` gate `seconds`
+already used to increment, since that's the only thing on screen that
+ever changes. Re-measured via the clean (no-ZRCP-while-running)
+technique below: ~44fps for both `sailing-by.aks` and the demanding
+track, up from ~30fps and ~6-10fps respectively -- matching Harvester's
+own ~45fps on the same demanding track.
+
+**Lesson for next time**: a no-gameplay test harness built specifically
+to isolate one subsystem (here, "is the Arkos player correct") can
+still have its OWN per-frame cost dominate the very measurement it was
+built to produce, if that harness's incidental UI code shares a known-
+slow path with real game code. When a minimal repro still shows a
+surprising result, isolate pieces of the *repro itself*, not just the
+subsystem the repro was built around -- don't assume a harness's own
+plumbing is free just because it was intended as a thin wrapper.
+
+### Measuring real frame rate without ZRCP's own overhead distorting it
+
+Worth restating as its own technique, since this investigation leaned
+on it heavily and it's not obvious: polling a frame counter via ZRCP
+*while connected* throttles the emulation and gives implausible,
+too-low readings (confirmed directly, not assumed). The reliable
+version: launch ZEsarUX with `--enable-remoteprotocol` but make NO
+connection while it runs; let it run completely untouched for a known
+wall-clock window (`sleep N` bracketed by `date +%s.%N`); connect ONLY
+at the very end, read the counter once, disconnect. Two such snapshots
+a known number of seconds apart give a clean `fps = Δframe / Δseconds`
+with no observer effect. A single pre/post pair across a long sleep
+also works, but two snapshots (skipping the first ~20s of boot/startup
+noise) is more robust for a quick A/B.

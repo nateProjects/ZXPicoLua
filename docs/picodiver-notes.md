@@ -247,6 +247,27 @@ either by reducing call depth in the hot drawing paths (`map()` ->
 reducing overall resident size to buy back headroom, since the build
 currently has essentially zero free bytes under the 64K limit.
 
+**2026-10-26 follow-up: a library primitive now exists so this doesn't
+need another ad-hoc ZRCP session next time.** `lib/pico_stack.c`/`.h` --
+`pico_stack_margin()` returns live bytes of headroom between the current
+SP and `__BSS_END_tail` (the exact linker symbol this section's own
+investigation read by hand from the `.map` file), and `pico_stack_low(n)`
+is the one-line "has it dropped to n or below" check. Idea credited to
+pocket-aot (a PICO-8-to-RP2040 transpiler)'s own `p8_stack_check()`,
+which does the same thing against a Pico-SDK linker symbol -- this
+project's version returns a number instead of calling an abort handler,
+since there's no exception-handling mechanism here and a false positive
+shouldn't be able to kill a whole game; a caller decides what a low
+margin means for it (flash the border, log it, ignore it). Verified by
+direct ZRCP measurement (not just reasoning): a temporary probe compared
+against a hand-computed `SP - __BSS_END_tail`, matched exactly once the
+function's own one-extra-call-frame depth (documented in `lib/
+pico_stack_sp.asm`) was accounted for. Any game that wants an early
+warning for exactly this class of bug -- no `#ifdef`, no opt-in, it's in
+the default `LIB_SRCS` wildcard like most of `lib/` -- can call
+`pico_stack_low(some_margin)` once per frame instead of waiting for a
+visible symptom like this section's own "tentacle trail" bug.
+
 ## 28MHz: tried, confirmed it breaks keyboard input, reverted
 
 The Next supports a 4th CPU speed step (28MHz, raw NextReg `$07` value 3

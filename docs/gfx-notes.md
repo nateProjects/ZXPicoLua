@@ -101,7 +101,18 @@ double-check that explanation, not a reason to stop looking.
 - `fillp(pattern, transparent)` takes transparency as an explicit second
   argument instead of Pico-8's fractional-pattern convention
   (`fillp(pattern + 0x0.8)`), which relies on a real Lua float literal
-  trick with no clean C equivalent.
+  trick with no clean C equivalent. `pico_fillp_fix(p)` (2026-10-26, added
+  for porting convenience after reviewing pocket-aot's own PICO-8
+  reimplementation, which packs the identical convention: `(pattern<<16)
+  | transparent_flag(0x8000)`) takes the real packed `pico_fix_t` and
+  decodes it into the two-argument form -- so a ported cart's own literal
+  `fillp(p)` call sites can be translated mechanically (pass the same
+  numeric literal through, reinterpreted as `pico_fix_t`) instead of
+  hand-splitting the pattern/transparent bits at every call site. Verified
+  via a 6-case native host-side harness (pattern-only, pattern+transparent,
+  all-1s, pattern-0-but-transparent, and a check that an unrelated
+  fractional bit near bit 15 isn't mistaken for the flag) -- no hardware
+  needed, pure bit arithmetic.
 - `camera()` was **not** implemented alongside the rest of these
   primitives originally -- introducing it meant revisiting every
   primitive's clipping for the much-more-common negative-coordinate case
